@@ -13,6 +13,7 @@ class FlowState(Enum):
     PROPOSE = "propose"
     REFINE = "refine"
     GENERATE = "generate"
+    VALIDATE = "validate"
     PREVIEW = "preview"
     CREATE_PR = "create_pr"
     END = "end"

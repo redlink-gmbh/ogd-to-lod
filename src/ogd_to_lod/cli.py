@@ -125,11 +125,40 @@ def main() -> int:
             print("Updated Proposal:")
             print(flow.get_proposal_text())
 
-        # Check if approved
-        if flow.is_approved():
-            print("\nProposal approved!")
-            print("RML generation not yet implemented. See Issue #7.")
-            break
+        # Show generated RML and validation results
+        if flow.has_generated_rml():
+            print("\n" + "=" * 60)
+            print("Generated RML:")
+            print("-" * 60)
+            print(flow.get_generated_rml())
+
+            # Show validation results
+            if flow.is_validated():
+                print("\n" + "=" * 60)
+                print("Validation: PASSED")
+                if flow.has_rdf_preview():
+                    print("\nRDF Preview (first 2000 chars):")
+                    print("-" * 60)
+                    preview = flow.get_rdf_preview()[:2000]
+                    print(preview)
+                    if len(flow.get_rdf_preview()) > 2000:
+                        print("... (truncated)")
+                print("\nReady for PR creation (not yet implemented).")
+                break
+            elif flow.get_validation_error():
+                print("\n" + "=" * 60)
+                print("Validation: FAILED")
+                print(f"Error: {flow.get_validation_error()}")
+                print("\nRefining mapping...")
+                # Show updated proposal after refinement
+                if flow.get_proposal_text():
+                    print("\n" + "=" * 60)
+                    print("Updated Proposal:")
+                    print(flow.get_proposal_text())
+
+        # Check if approved but not yet generated
+        if flow.is_approved() and not flow.has_generated_rml():
+            print("\nProposal approved! Generating RML...")
 
     return 0
 

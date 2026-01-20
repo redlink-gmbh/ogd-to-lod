@@ -8,6 +8,7 @@ from ogd_to_lod.config import Config
 from ogd_to_lod.logging import get_logger
 from ogd_to_lod.parsers import parse_csv, parse_dcat, CSVParseError, DCATParseError
 from ogd_to_lod.rml import RMLGenerator, RMLGenerationError
+from ogd_to_lod.validation import RMLValidator, ValidationResult
 
 from .state import (
     DimensionProposal,
@@ -407,3 +408,100 @@ def _parse_proposal(data: dict[str, Any]) -> MappingProposal:
         proposal.measures.append(measure)
 
     return proposal
+
+
+def validate_node(
+    state: GraphState,
+    rmlmapper_jar: str | None = None,
+    use_docker: bool = False,
+) -> GraphState:
+    """Validate the generated RML mapping.
+
+    Executes the RML mapping against the source CSV to verify it produces
+    valid RDF output. If validation fails, the error is stored and the flow
+    can loop back for refinement.
+
+    Args:
+        state: Current graph state with generated RML.
+        rmlmapper_jar: Path to RMLMapper JAR file (optional).
+        use_docker: Whether to use Docker for RMLMapper.
+
+    Returns:
+        Updated state with validation result.
+    """
+    logger.info("Entering VALIDATE state")
+
+    # Check prerequisites
+    if not state.generated_rml:
+        state.error_message = "No RML to validate"
+        state.current_state = FlowState.ERROR
+        return state
+
+    if not state.csv_path:
+        state.error_message = "CSV path required for validation"
+        state.current_state = FlowState.ERROR
+        return state
+
+    # Initialize validator
+    validator = RMLValidator(rmlmapper_jar=rmlmapper_jar, use_docker=use_docker)
+
+    # Run validation
+    logger.debug(f"Validating RML against {state.csv_path}")
+    result = validator.validate(state.generated_rml, state.csv_path)
+
+    if result.valid:
+        logger.info("RML validation successful")
+
+        # Store RDF preview
+        state.rdf_preview = result.rdf_output
+        state.validation_error = None
+
+        # Log any warnings
+        if result.warnings:
+            for warning in result.warnings:
+                logger.warning(f"Validation warning: {warning}")
+
+        # Add success message
+        if result.rdf_output:
+            # Show a sample of the output (first 1000 chars)
+            preview_sample = result.rdf_output[:1000]
+            if len(result.rdf_output) > 1000:
+                preview_sample += "\n... (truncated)"
+
+            state.add_message(
+                "assistant",
+                f"RML validation successful! Here's a preview of the generated RDF:\n\n"
+                f"```turtle\n{preview_sample}\n```",
+            )
+        else:
+            state.add_message(
+                "assistant",
+                "RML syntax validation successful. "
+                "(Full RDF preview unavailable - RMLMapper not configured)",
+            )
+
+        # Transition to PREVIEW
+        state.current_state = FlowState.PREVIEW
+        logger.info("Transitioning to PREVIEW state")
+
+    else:
+        logger.warning(f"RML validation failed: {result.error_message}")
+
+        # Store validation error
+        state.validation_error = result.error_message
+        state.rdf_preview = None
+
+        # Add error message to conversation
+        state.add_message(
+            "assistant",
+            f"RML validation failed:\n\n{result.error_message}\n\n"
+            "I'll adjust the mapping to fix this issue.",
+        )
+
+        # Transition back to REFINE for correction
+        state.current_state = FlowState.REFINE
+        if state.mapping_proposal:
+            state.mapping_proposal.status = "refining"
+        logger.info("Validation failed, transitioning to REFINE state")
+
+    return state
