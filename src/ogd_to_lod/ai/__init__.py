@@ -1,6 +1,7 @@
 """AI service integration with Azure OpenAI."""
 
 from ogd_to_lod.ai.service import (
+    DEFAULT_SYSTEM_PROMPT,
     AIService,
     AIServiceError,
     CodeBlock,
@@ -8,7 +9,6 @@ from ogd_to_lod.ai.service import (
     Message,
     ParsedResponse,
     RateLimitExceeded,
-    DEFAULT_SYSTEM_PROMPT,
 )
 
 __all__ = [

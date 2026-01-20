@@ -1,13 +1,15 @@
 """Node functions for the LangGraph conversation flow."""
 
-import yaml
 from typing import Any
 
-from ogd_to_lod.ai import AIService, ParsedResponse
+import yaml
+
+from ogd_to_lod.ai import AIService
 from ogd_to_lod.config import Config
+from ogd_to_lod.github import GitHubService, PRCreationError
 from ogd_to_lod.logging import get_logger
-from ogd_to_lod.parsers import parse_csv, parse_dcat, CSVParseError, DCATParseError
-from ogd_to_lod.rml import RMLGenerator, RMLGenerationError
+from ogd_to_lod.parsers import CSVParseError, DCATParseError, parse_csv, parse_dcat
+from ogd_to_lod.rml import RMLGenerationError, RMLGenerator
 
 from .state import (
     DimensionProposal,
@@ -17,7 +19,6 @@ from .state import (
     MeasureProposal,
     UserIntent,
 )
-
 
 logger = get_logger(__name__)
 
@@ -173,7 +174,8 @@ Provide your proposal in YAML format with your explanation."""
         try:
             proposal_data = yaml.safe_load(yaml_blocks[0])
             state.mapping_proposal = _parse_proposal(proposal_data)
-            logger.debug(f"Parsed proposal with {len(state.mapping_proposal.dimensions)} dimensions")
+            num_dims = len(state.mapping_proposal.dimensions)
+            logger.debug(f"Parsed proposal with {num_dims} dimensions")
         except yaml.YAMLError as e:
             logger.warning(f"Failed to parse YAML proposal: {e}")
             state.mapping_proposal = MappingProposal()
@@ -317,6 +319,166 @@ def generate_node(state: GraphState, ai_service: AIService) -> GraphState:
         state.current_state = FlowState.ERROR
 
     return state
+
+
+def preview_node(state: GraphState) -> GraphState:
+    """Display RML preview and wait for user confirmation to create PR.
+
+    Args:
+        state: Current graph state with generated RML.
+
+    Returns:
+        Updated state awaiting user confirmation.
+    """
+    logger.info("Entering PREVIEW state")
+
+    if not state.generated_rml:
+        state.error_message = "No RML generated for preview"
+        state.current_state = FlowState.ERROR
+        return state
+
+    # The CLI will display the RML, we just need to wait for confirmation
+    state.awaiting_user_input = True
+    state.add_message(
+        "assistant",
+        "RML mapping has been generated. Would you like to create a PR with this mapping?"
+    )
+
+    logger.info("Awaiting user confirmation for PR creation")
+
+    return state
+
+
+def create_pr_node(state: GraphState, config: Config) -> GraphState:
+    """Create a GitHub PR with the generated RML mapping.
+
+    Args:
+        state: Current graph state with generated RML and mapping proposal.
+        config: Application configuration with GitHub settings.
+
+    Returns:
+        Updated state with PR information.
+    """
+    logger.info("Entering CREATE_PR state")
+
+    # Validate prerequisites
+    if not state.generated_rml:
+        state.error_message = "No RML generated for PR creation"
+        state.current_state = FlowState.ERROR
+        return state
+
+    if not state.csv_path:
+        state.error_message = "CSV path is required for PR creation"
+        state.current_state = FlowState.ERROR
+        return state
+
+    # Derive mapping name from CSV filename
+    csv_filename = state.csv_path.split("/")[-1].split("\\")[-1]
+    mapping_name = csv_filename.rsplit(".", 1)[0] if "." in csv_filename else csv_filename
+
+    # Build PR description
+    pr_description = _build_pr_description(state, mapping_name)
+
+    # Create the PR
+    try:
+        github_service = GitHubService(config.github)
+        result = github_service.create_mapping_pr(
+            mapping_name=mapping_name,
+            rml_content=state.generated_rml,
+            description=pr_description,
+        )
+
+        state.pr_url = result.pr_url
+        state.pr_number = result.pr_number
+
+        state.add_message(
+            "assistant",
+            f"PR created successfully!\n\nPR #{result.pr_number}: {result.pr_url}"
+        )
+
+        logger.info(f"PR created: #{result.pr_number}")
+
+        # Transition to END state
+        state.current_state = FlowState.END
+        logger.info("Flow completed successfully")
+
+    except PRCreationError as e:
+        logger.error(f"PR creation failed: {e}")
+        state.error_message = f"Failed to create PR: {e}"
+        state.current_state = FlowState.ERROR
+
+    return state
+
+
+def _build_pr_description(state: GraphState, mapping_name: str) -> str:
+    """Build a human-readable PR description.
+
+    Args:
+        state: Current graph state.
+        mapping_name: Name of the mapping.
+
+    Returns:
+        Formatted PR description in markdown.
+    """
+    lines = [
+        f"## RML Mapping: {mapping_name}",
+        "",
+    ]
+
+    # Add data source info
+    if state.csv_path:
+        lines.append(f"**CSV Source:** `{state.csv_path}`")
+    if state.dcat_path:
+        lines.append(f"**DCAT Metadata:** `{state.dcat_path}`")
+    if state.base_uri:
+        lines.append(f"**Base URI:** `{state.base_uri}`")
+    lines.append("")
+
+    # Add DCAT metadata if available
+    if state.dcat_metadata:
+        if state.dcat_metadata.get("title"):
+            lines.append(f"**Dataset Title:** {state.dcat_metadata['title']}")
+        if state.dcat_metadata.get("description"):
+            desc = state.dcat_metadata["description"]
+            if len(desc) > 200:
+                desc = desc[:200] + "..."
+            lines.append(f"**Description:** {desc}")
+        lines.append("")
+
+    # Add mapping summary
+    if state.mapping_proposal:
+        lines.append("### Mapping Structure")
+        lines.append("")
+
+        if state.mapping_proposal.dimensions:
+            lines.append("**Dimensions:**")
+            for dim in state.mapping_proposal.dimensions:
+                dim_str = f"- `{dim.column}` ({dim.dimension_type})"
+                if dim.granularity:
+                    dim_str += f" - granularity: {dim.granularity}"
+                if dim.hierarchy:
+                    dim_str += f" - hierarchy: {dim.hierarchy}"
+                lines.append(dim_str)
+            lines.append("")
+
+        if state.mapping_proposal.measures:
+            lines.append("**Measures:**")
+            for measure in state.mapping_proposal.measures:
+                measure_str = f"- `{measure.column}`"
+                if measure.unit:
+                    measure_str += f" ({measure.unit})"
+                if measure.aggregation:
+                    measure_str += f" - aggregation: {measure.aggregation}"
+                lines.append(measure_str)
+            lines.append("")
+
+    # Add footer
+    lines.extend([
+        "---",
+        "_Generated by [OGD to LOD](https://github.com/redlink-gmbh/ogd-to-lod)_",
+    ])
+
+    return "\n".join(lines)
 
 
 def _build_summary(csv_schema: dict[str, Any] | None, dcat_metadata: dict[str, Any] | None) -> str:

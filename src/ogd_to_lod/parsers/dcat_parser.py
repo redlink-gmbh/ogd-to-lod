@@ -10,7 +10,7 @@ from urllib.request import urlopen
 
 from rdflib import Graph, Namespace
 from rdflib.namespace import DCTERMS, FOAF, RDF
-from rdflib.term import Node, Literal, URIRef
+from rdflib.term import Literal, Node, URIRef
 
 from .models import DCATMetadata, SpatialCoverage, TemporalCoverage
 

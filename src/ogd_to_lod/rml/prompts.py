@@ -1,6 +1,8 @@
 """AI prompts for RML generation."""
 
-RML_GENERATION_PROMPT = """Generate a valid RML (RDF Mapping Language) mapping in Turtle format based on the approved mapping proposal and CSV schema.
+RML_GENERATION_PROMPT = """\
+Generate a valid RML (RDF Mapping Language) mapping in Turtle format \
+based on the approved mapping proposal and CSV schema.
 
 ## Required Prefixes
 Use the following prefixes:
@@ -59,7 +61,8 @@ Do not include explanations outside the code block.
 ```
 """
 
-RML_VALIDATION_PROMPT = """Validate the following RML Turtle mapping for syntactic correctness and completeness.
+RML_VALIDATION_PROMPT = """\
+Validate the following RML Turtle mapping for syntactic correctness and completeness.
 
 Check for:
 1. All required prefixes are defined

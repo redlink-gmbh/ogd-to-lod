@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from ogd_to_lod.ai import AIService, ParsedResponse
+from ogd_to_lod.ai import AIService
 from ogd_to_lod.logging import get_logger
 from ogd_to_lod.rml.prompts import RML_GENERATION_PROMPT
 
@@ -65,7 +65,7 @@ class RMLGenerator:
             csv_schema=schema_text,
         )
 
-        logger.debug(f"Sending RML generation prompt to AI")
+        logger.debug("Sending RML generation prompt to AI")
 
         try:
             response = self._ai_service.send_message(prompt)

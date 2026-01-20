@@ -12,9 +12,9 @@ from openai import APIConnectionError, APIStatusError, RateLimitError
 
 from ogd_to_lod.config import AzureOpenAIConfig
 
-
 # Default system prompt for RML mapping assistance
-DEFAULT_SYSTEM_PROMPT = """You are an RDF mapping expert specializing in creating RML (RDF Mapping Language)
+DEFAULT_SYSTEM_PROMPT = """\
+You are an RDF mapping expert specializing in creating RML (RDF Mapping Language) \
 configurations for statistical data cubes.
 
 Your task: Help users transform CSV files into RDF data cubes using:
