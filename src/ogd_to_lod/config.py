@@ -39,6 +39,9 @@ class RMLConfig:
     """RML generation configuration."""
 
     base_uri: str = ""
+    rmlmapper_jar: str | None = None
+    rmlmapper_use_docker: bool = False
+    rmlmapper_docker_image: str = "rmlio/rmlmapper-java:latest"
 
 
 @dataclass
@@ -180,8 +183,15 @@ def load_config(config_path: str | Path) -> Config:
         )
 
         rml_data = config_data.get("rml", {})
+        # Support environment variable for RMLMapper JAR path
+        rmlmapper_jar = rml_data.get("rmlmapper_jar") or os.environ.get("RMLMAPPER_JAR")
         rml = RMLConfig(
             base_uri=rml_data.get("base_uri", ""),
+            rmlmapper_jar=rmlmapper_jar,
+            rmlmapper_use_docker=rml_data.get("rmlmapper_use_docker", False),
+            rmlmapper_docker_image=rml_data.get(
+                "rmlmapper_docker_image", "rmlio/rmlmapper-java:latest"
+            ),
         )
 
         # Logging config - can also be set via LOG_LEVEL environment variable

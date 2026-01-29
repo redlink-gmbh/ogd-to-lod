@@ -132,21 +132,50 @@ def main() -> int:
             print("Updated Proposal:")
             print(flow.get_proposal_text())
 
-        # Check if RML was generated - show it and await PR confirmation
-        if flow.has_generated_rml() and flow.is_awaiting_pr_confirmation():
+        # Show generated RML and validation results
+        if flow.has_generated_rml():
             print("\n" + "=" * 60)
-            print("Generated RML Mapping:")
+            print("Generated RML:")
             print("-" * 60)
             print(flow.get_generated_rml())
-            print("-" * 60)
-            continue
 
-        # Check if PR was created
-        if flow.has_created_pr():
-            print("\n" + "=" * 60)
-            print("PR created successfully!")
-            print(f"PR #{flow.get_pr_number()}: {flow.get_pr_url()}")
-            break
+            # Show validation results
+            if flow.is_validated():
+                print("\n" + "=" * 60)
+                print("Validation: PASSED")
+                if flow.has_rdf_preview():
+                    print("\nRDF Preview (first 2000 chars):")
+                    print("-" * 60)
+                    preview = flow.get_rdf_preview()[:2000]
+                    print(preview)
+                    if len(flow.get_rdf_preview()) > 2000:
+                        print("... (truncated)")
+
+                # Check if awaiting PR confirmation
+                if flow.is_awaiting_pr_confirmation():
+                    continue
+
+                # Check if PR was created
+                if flow.has_created_pr():
+                    print("\n" + "=" * 60)
+                    print("PR created successfully!")
+                    print(f"PR #{flow.get_pr_number()}: {flow.get_pr_url()}")
+                    break
+
+            elif flow.get_validation_error():
+                print("\n" + "=" * 60)
+                print("Validation: FAILED")
+                print(f"Error: {flow.get_validation_error()}")
+                print("\nRefining mapping...")
+                # Show updated proposal after refinement
+                if flow.get_proposal_text():
+                    print("\n" + "=" * 60)
+                    print("Updated Proposal:")
+                    print(flow.get_proposal_text())
+
+        # Check if approved but not yet generated
+        if flow.is_approved() and not flow.has_generated_rml():
+            print("\nProposal approved! Generating RML...")
 
         # Check if flow completed (user cancelled PR)
         if flow.is_complete():

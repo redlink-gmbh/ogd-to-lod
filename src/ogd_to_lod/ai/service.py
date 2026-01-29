@@ -286,21 +286,29 @@ class AIService:
         Extracts fenced code blocks (```language ... ```) and returns
         both the plain text and the extracted code blocks.
 
+        Handles various formats:
+        - ```yaml\\ncontent``` (standard)
+        - ```yaml content``` (no newline after language)
+        - ``` yaml\\ncontent``` (space before language)
+        - ```YAML\\ncontent``` (uppercase language)
+        - ```\\ncontent``` (no language)
+
         Args:
             response: Raw AI response text.
 
         Returns:
             ParsedResponse with text and code blocks separated.
         """
-        # Pattern to match fenced code blocks
-        code_block_pattern = r"```(\w+)?\n(.*?)```"
+        # Pattern to match fenced code blocks with flexible formatting
+        # Handles: ```lang\n, ``` lang\n, ```lang (no newline), ```\n
+        code_block_pattern = r"```[ \t]*(\w+)?[ \t]*\n?(.*?)```"
 
         code_blocks: list[CodeBlock] = []
 
         def replace_block(match: re.Match) -> str:
-            language = match.group(1) or ""
+            language = (match.group(1) or "").lower().strip()
             content = match.group(2).strip()
-            code_blocks.append(CodeBlock(language=language.lower(), content=content))
+            code_blocks.append(CodeBlock(language=language, content=content))
             return ""
 
         # Extract code blocks and get remaining text

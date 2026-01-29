@@ -16,6 +16,7 @@ from .nodes import (
     init_node,
     preview_node,
     propose_node,
+    validate_node,
 )
 from .state import FlowState, GraphState, UserIntent
 
@@ -58,6 +59,7 @@ class MappingFlow:
         graph.add_node("wait_for_input", self._wait_for_input)
         graph.add_node("process_input", self._wrap_process_input)
         graph.add_node("generate", self._wrap_generate)
+        graph.add_node("validate", self._wrap_validate)
         graph.add_node("preview", self._wrap_preview)
         graph.add_node("wait_for_pr_confirmation", self._wait_for_pr_confirmation)
         graph.add_node("process_pr_confirmation", self._wrap_process_pr_confirmation)
@@ -103,7 +105,17 @@ class MappingFlow:
             "generate",
             self._route_from_generate,
             {
-                "preview": "preview",
+                "validate": "validate",  # Proceed to validation
+                "error": "error",
+            },
+        )
+
+        graph.add_conditional_edges(
+            "validate",
+            self._route_from_validate,
+            {
+                "preview": "preview",  # Validation passed, proceed to preview
+                "refine": "propose",  # Validation failed, loop back for refinement
                 "error": "error",
             },
         )
@@ -165,6 +177,18 @@ class MappingFlow:
     def _wrap_generate(self, state_dict: dict[str, Any]) -> dict[str, Any]:
         """Wrapper for generate node."""
         self._state = generate_node(self._state, self._ai_service)
+        return self._state.to_dict()
+
+    def _wrap_validate(self, state_dict: dict[str, Any]) -> dict[str, Any]:
+        """Wrapper for validate node."""
+        # Get RMLMapper configuration from config
+        rmlmapper_jar = self._config.rml.rmlmapper_jar
+        use_docker = self._config.rml.rmlmapper_use_docker
+        self._state = validate_node(
+            self._state,
+            rmlmapper_jar=rmlmapper_jar,
+            use_docker=use_docker,
+        )
         return self._state.to_dict()
 
     def _wrap_preview(self, state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -233,6 +257,14 @@ class MappingFlow:
         """Route from GENERATE state."""
         if self._state.current_state == FlowState.ERROR:
             return "error"
+        return "validate"
+
+    def _route_from_validate(self, state_dict: dict[str, Any]) -> str:
+        """Route from VALIDATE state."""
+        if self._state.current_state == FlowState.ERROR:
+            return "error"
+        if self._state.current_state == FlowState.REFINE:
+            return "refine"
         return "preview"
 
     def _route_from_pr_confirmation(self, state_dict: dict[str, Any]) -> str:
@@ -320,9 +352,23 @@ class MappingFlow:
             logger.info("User approved mapping, generating RML")
             self._state = generate_node(self._state, self._ai_service)
 
-            # If generation successful, move to PREVIEW
-            if self._state.current_state == FlowState.PREVIEW:
-                self._state = preview_node(self._state)
+            # Validate the generated RML
+            if self._state.current_state != FlowState.ERROR:
+                logger.info("Validating generated RML")
+                self._state = validate_node(
+                    self._state,
+                    rmlmapper_jar=self._config.rml.rmlmapper_jar,
+                    use_docker=self._config.rml.rmlmapper_use_docker,
+                )
+
+                # If validation passed, move to PREVIEW
+                if self._state.current_state == FlowState.PREVIEW:
+                    self._state = preview_node(self._state)
+
+                # If validation failed, loop back to propose with error context
+                elif self._state.current_state == FlowState.REFINE:
+                    logger.info("Validation failed, refining mapping")
+                    self._state = propose_node(self._state, self._ai_service)
 
         elif self._state.current_state == FlowState.REFINE:
             # User wants changes - loop back to propose
@@ -380,7 +426,7 @@ class MappingFlow:
 
     def is_complete(self) -> bool:
         """Check if flow has completed."""
-        return self._state.current_state in (FlowState.END, FlowState.ERROR)
+        return self._state.current_state in (FlowState.END, FlowState.ERROR, FlowState.PREVIEW)
 
     def is_approved(self) -> bool:
         """Check if mapping has been approved."""
@@ -396,6 +442,25 @@ class MappingFlow:
     def has_generated_rml(self) -> bool:
         """Check if RML has been generated."""
         return self._state.generated_rml is not None
+
+    def is_validated(self) -> bool:
+        """Check if RML has been successfully validated."""
+        return (
+            self._state.current_state == FlowState.PREVIEW
+            and self._state.validation_error is None
+        )
+
+    def get_validation_error(self) -> str | None:
+        """Get the validation error message if validation failed."""
+        return self._state.validation_error
+
+    def get_rdf_preview(self) -> str | None:
+        """Get the RDF preview generated from validation."""
+        return self._state.rdf_preview
+
+    def has_rdf_preview(self) -> bool:
+        """Check if an RDF preview is available."""
+        return self._state.rdf_preview is not None
 
     def is_awaiting_pr_confirmation(self) -> bool:
         """Check if flow is waiting for PR creation confirmation."""

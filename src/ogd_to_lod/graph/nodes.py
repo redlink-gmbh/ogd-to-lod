@@ -1,5 +1,6 @@
 """Node functions for the LangGraph conversation flow."""
 
+import re
 from typing import Any
 
 import yaml
@@ -10,6 +11,7 @@ from ogd_to_lod.github import GitHubService, PRCreationError
 from ogd_to_lod.logging import get_logger
 from ogd_to_lod.parsers import CSVParseError, DCATParseError, parse_csv, parse_dcat
 from ogd_to_lod.rml import RMLGenerationError, RMLGenerator
+from ogd_to_lod.validation import RMLValidator, ValidationResult
 
 from .state import (
     DimensionProposal,
@@ -150,7 +152,7 @@ def propose_node(state: GraphState, ai_service: AIService) -> GraphState:
     context = _build_ai_context(state)
     ai_service.add_context(context)
 
-    # Ask AI for proposal
+    # Ask AI for proposal with explicit YAML format example
     prompt = """Based on the CSV schema and metadata provided, please propose a mapping structure.
 
 Identify:
@@ -158,7 +160,21 @@ Identify:
 2. Which columns should be measures (with units if applicable)
 3. Any hierarchies that should be created
 
-Provide your proposal in YAML format with your explanation."""
+Provide your proposal in YAML format following this exact structure:
+
+```yaml
+dimensions:
+  - column: <column_name>
+    type: <temporal|spatial|categorical>
+    granularity: <optional: year, month, day, etc.>
+    hierarchy: <optional: hierarchy name>
+measures:
+  - column: <column_name>
+    unit: <optional: unit of measurement>
+    aggregation: <optional: sum, avg, count, etc.>
+```
+
+Important: Use exactly the keys shown above (dimensions, measures, column, type, unit, etc.)."""
 
     logger.debug("Sending proposal request to AI")
     response = ai_service.send_message(prompt)
@@ -168,19 +184,34 @@ Provide your proposal in YAML format with your explanation."""
     state.proposal_text = parsed.text
     state.add_message("assistant", response)
 
-    # Parse YAML proposal if present
+    # Parse YAML proposal with robust parsing
     yaml_blocks = parsed.get_yaml_blocks()
+    proposal = None
+
     if yaml_blocks:
-        try:
-            proposal_data = yaml.safe_load(yaml_blocks[0])
-            state.mapping_proposal = _parse_proposal(proposal_data)
-            num_dims = len(state.mapping_proposal.dimensions)
-            logger.debug(f"Parsed proposal with {num_dims} dimensions")
-        except yaml.YAMLError as e:
-            logger.warning(f"Failed to parse YAML proposal: {e}")
-            state.mapping_proposal = MappingProposal()
-    else:
-        state.mapping_proposal = MappingProposal()
+        # Try each YAML block until one parses successfully
+        for i, yaml_content in enumerate(yaml_blocks):
+            proposal = _robust_parse_yaml_proposal(yaml_content)
+            if proposal and (proposal.dimensions or proposal.measures):
+                logger.debug(
+                    f"Successfully parsed YAML block {i + 1} with "
+                    f"{len(proposal.dimensions)} dimensions, {len(proposal.measures)} measures"
+                )
+                break
+            logger.debug(f"YAML block {i + 1} did not contain valid proposal data")
+
+    if proposal is None or (not proposal.dimensions and not proposal.measures):
+        # Try to extract proposal from raw response as fallback
+        logger.warning("No valid YAML blocks found, attempting to parse from raw response")
+        proposal = _extract_proposal_from_text(response)
+
+    state.mapping_proposal = proposal if proposal else MappingProposal()
+
+    if not state.mapping_proposal.dimensions and not state.mapping_proposal.measures:
+        logger.warning(
+            "Could not parse mapping proposal from AI response. "
+            "User may need to provide explicit structure."
+        )
 
     # Wait for user confirmation
     state.awaiting_user_input = True
@@ -546,26 +577,396 @@ def _build_ai_context(state: GraphState) -> str:
 
 
 def _parse_proposal(data: dict[str, Any]) -> MappingProposal:
-    """Parse YAML proposal data into MappingProposal."""
+    """Parse YAML proposal data into MappingProposal.
+
+    Handles various key name variations that AI might use.
+    """
     proposal = MappingProposal()
 
+    # Try various key names for dimensions
+    dimensions_data = (
+        data.get("dimensions")
+        or data.get("dimension")
+        or data.get("dims")
+        or data.get("Dimensions")
+        or []
+    )
+
     # Parse dimensions
-    for dim_data in data.get("dimensions", []):
+    for dim_data in dimensions_data:
+        if not isinstance(dim_data, dict):
+            continue
+        column = (
+            dim_data.get("column")
+            or dim_data.get("name")
+            or dim_data.get("col")
+            or dim_data.get("field")
+            or ""
+        )
+        dim_type = (
+            dim_data.get("type")
+            or dim_data.get("dimension_type")
+            or dim_data.get("kind")
+            or "categorical"
+        )
         dim = DimensionProposal(
-            column=dim_data.get("column", ""),
-            dimension_type=dim_data.get("type", "categorical"),
+            column=str(column),
+            dimension_type=str(dim_type).lower(),
             granularity=dim_data.get("granularity"),
             hierarchy=dim_data.get("hierarchy"),
         )
-        proposal.dimensions.append(dim)
+        if dim.column:  # Only add if column name exists
+            proposal.dimensions.append(dim)
+
+    # Try various key names for measures
+    measures_data = (
+        data.get("measures")
+        or data.get("measure")
+        or data.get("metrics")
+        or data.get("metric")
+        or data.get("Measures")
+        or []
+    )
 
     # Parse measures
-    for measure_data in data.get("measures", []):
-        measure = MeasureProposal(
-            column=measure_data.get("column", ""),
-            unit=measure_data.get("unit"),
-            aggregation=measure_data.get("aggregation"),
+    for measure_data in measures_data:
+        if not isinstance(measure_data, dict):
+            continue
+        column = (
+            measure_data.get("column")
+            or measure_data.get("name")
+            or measure_data.get("col")
+            or measure_data.get("field")
+            or ""
         )
-        proposal.measures.append(measure)
+        measure = MeasureProposal(
+            column=str(column),
+            unit=measure_data.get("unit"),
+            aggregation=measure_data.get("aggregation") or measure_data.get("agg"),
+        )
+        if measure.column:  # Only add if column name exists
+            proposal.measures.append(measure)
 
     return proposal
+
+
+def validate_node(
+    state: GraphState,
+    rmlmapper_jar: str | None = None,
+    use_docker: bool = False,
+) -> GraphState:
+    """Validate the generated RML mapping.
+
+    Executes the RML mapping against the source CSV to verify it produces
+    valid RDF output. If validation fails, the error is stored and the flow
+    can loop back for refinement.
+
+    Args:
+        state: Current graph state with generated RML.
+        rmlmapper_jar: Path to RMLMapper JAR file (optional).
+        use_docker: Whether to use Docker for RMLMapper.
+
+    Returns:
+        Updated state with validation result.
+    """
+    logger.info("Entering VALIDATE state")
+
+    # Check prerequisites
+    if not state.generated_rml:
+        state.error_message = "No RML to validate"
+        state.current_state = FlowState.ERROR
+        return state
+
+    if not state.csv_path:
+        state.error_message = "CSV path required for validation"
+        state.current_state = FlowState.ERROR
+        return state
+
+    # Initialize validator
+    validator = RMLValidator(rmlmapper_jar=rmlmapper_jar, use_docker=use_docker)
+
+    # Run validation
+    logger.debug(f"Validating RML against {state.csv_path}")
+    result = validator.validate(state.generated_rml, state.csv_path)
+
+    if result.valid:
+        logger.info("RML validation successful")
+
+        # Store RDF preview
+        state.rdf_preview = result.rdf_output
+        state.validation_error = None
+
+        # Log any warnings
+        if result.warnings:
+            for warning in result.warnings:
+                logger.warning(f"Validation warning: {warning}")
+
+        # Add success message
+        if result.rdf_output:
+            # Show a sample of the output (first 1000 chars)
+            preview_sample = result.rdf_output[:1000]
+            if len(result.rdf_output) > 1000:
+                preview_sample += "\n... (truncated)"
+
+            state.add_message(
+                "assistant",
+                f"RML validation successful! Here's a preview of the generated RDF:\n\n"
+                f"```turtle\n{preview_sample}\n```",
+            )
+        else:
+            state.add_message(
+                "assistant",
+                "RML syntax validation successful. "
+                "(Full RDF preview unavailable - RMLMapper not configured)",
+            )
+
+        # Transition to PREVIEW
+        state.current_state = FlowState.PREVIEW
+        logger.info("Transitioning to PREVIEW state")
+
+    else:
+        logger.warning(f"RML validation failed: {result.error_message}")
+
+        # Store validation error
+        state.validation_error = result.error_message
+        state.rdf_preview = None
+
+        # Add error message to conversation
+        state.add_message(
+            "assistant",
+            f"RML validation failed:\n\n{result.error_message}\n\n"
+            "I'll adjust the mapping to fix this issue.",
+        )
+
+        # Transition back to REFINE for correction
+        state.current_state = FlowState.REFINE
+        if state.mapping_proposal:
+            state.mapping_proposal.status = "refining"
+        logger.info("Validation failed, transitioning to REFINE state")
+
+    return state
+def _robust_parse_yaml_proposal(yaml_content: str) -> MappingProposal | None:
+    """Robustly parse YAML content into a MappingProposal.
+
+    Tries multiple parsing strategies:
+    1. Standard YAML parsing
+    2. Fix common YAML issues and retry
+    3. Try parsing as different structures
+
+    Args:
+        yaml_content: Raw YAML string from AI response.
+
+    Returns:
+        MappingProposal if parsing succeeds, None otherwise.
+    """
+    # Strategy 1: Try standard parsing
+    try:
+        data = yaml.safe_load(yaml_content)
+        if isinstance(data, dict):
+            return _parse_proposal(data)
+    except yaml.YAMLError as e:
+        logger.debug(f"Standard YAML parsing failed: {e}")
+
+    # Strategy 2: Try to fix common YAML issues
+    fixed_content = _fix_common_yaml_issues(yaml_content)
+    if fixed_content != yaml_content:
+        try:
+            data = yaml.safe_load(fixed_content)
+            if isinstance(data, dict):
+                logger.debug("YAML parsing succeeded after fixing common issues")
+                return _parse_proposal(data)
+        except yaml.YAMLError as e:
+            logger.debug(f"Fixed YAML parsing failed: {e}")
+
+    # Strategy 3: Try parsing line by line for simple structures
+    try:
+        proposal = _parse_yaml_line_by_line(yaml_content)
+        if proposal and (proposal.dimensions or proposal.measures):
+            logger.debug("Line-by-line YAML parsing succeeded")
+            return proposal
+    except Exception as e:
+        logger.debug(f"Line-by-line parsing failed: {e}")
+
+    return None
+
+
+def _fix_common_yaml_issues(yaml_content: str) -> str:
+    """Fix common YAML formatting issues from AI responses.
+
+    Handles:
+    - Trailing commas (JSON-style)
+    - Inconsistent indentation
+    - Missing colons
+    - Smart quotes
+
+    Args:
+        yaml_content: Raw YAML string.
+
+    Returns:
+        Fixed YAML string.
+    """
+    content = yaml_content
+
+    # Replace smart quotes with regular quotes using Unicode escapes
+    # Left/right double quotes: U+201C, U+201D -> "
+    content = content.replace('\u201c', '"').replace('\u201d', '"')
+    # Left/right single quotes: U+2018, U+2019 -> '
+    content = content.replace('\u2018', "'").replace('\u2019', "'")
+
+    # Remove trailing commas (JSON-style)
+    content = re.sub(r',(\s*\n)', r'\1', content)
+    content = re.sub(r',(\s*])', r'\1', content)
+    content = re.sub(r',(\s*})', r'\1', content)
+
+    # Normalize indentation (convert tabs to spaces)
+    content = content.replace('\t', '  ')
+
+    # Fix common missing space after colon
+    content = re.sub(r':([^\s\n])', r': \1', content)
+
+    return content
+
+
+def _parse_yaml_line_by_line(yaml_content: str) -> MappingProposal | None:
+    """Parse YAML content line by line for simple list structures.
+
+    This is a fallback parser for when standard YAML parsing fails.
+    It looks for patterns like:
+    - column: value
+    - type: value
+
+    Args:
+        yaml_content: Raw YAML string.
+
+    Returns:
+        MappingProposal if patterns are found, None otherwise.
+    """
+    proposal = MappingProposal()
+    lines = yaml_content.split('\n')
+
+    current_section: str | None = None
+    current_item: dict[str, Any] = {}
+
+    def save_current_item() -> None:
+        """Save the current item to the appropriate list."""
+        nonlocal current_item
+        if not current_item or not current_section:
+            return
+
+        if current_section == 'dimensions':
+            dim = DimensionProposal(
+                column=current_item.get('column', ''),
+                dimension_type=current_item.get('type', 'categorical'),
+                granularity=current_item.get('granularity'),
+                hierarchy=current_item.get('hierarchy'),
+            )
+            if dim.column:
+                proposal.dimensions.append(dim)
+        elif current_section == 'measures':
+            measure = MeasureProposal(
+                column=current_item.get('column', ''),
+                unit=current_item.get('unit'),
+                aggregation=current_item.get('aggregation'),
+            )
+            if measure.column:
+                proposal.measures.append(measure)
+        current_item = {}
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Detect section headers - save current item before switching
+        if stripped.startswith('dimensions:') or stripped.startswith('Dimensions:'):
+            save_current_item()
+            current_section = 'dimensions'
+            continue
+        elif stripped.startswith('measures:') or stripped.startswith('Measures:'):
+            save_current_item()
+            current_section = 'measures'
+            continue
+
+        # Skip empty lines
+        if not stripped:
+            continue
+
+        # Detect list item start
+        if stripped.startswith('- '):
+            # Save previous item if exists
+            save_current_item()
+            current_item = {}
+
+            # Parse inline key-value if present (e.g., "- column: year")
+            rest = stripped[2:].strip()
+            if ':' in rest:
+                key, value = rest.split(':', 1)
+                current_item[key.strip()] = value.strip()
+        elif ':' in stripped and current_section:
+            # Parse key-value pair
+            key, value = stripped.split(':', 1)
+            current_item[key.strip()] = value.strip()
+
+    # Don't forget the last item
+    save_current_item()
+
+    return proposal if (proposal.dimensions or proposal.measures) else None
+
+
+def _extract_proposal_from_text(response: str) -> MappingProposal | None:
+    """Extract proposal information from unstructured text response.
+
+    This is a last-resort fallback that tries to identify dimensions
+    and measures from natural language descriptions.
+
+    Args:
+        response: Full AI response text.
+
+    Returns:
+        MappingProposal if information can be extracted, None otherwise.
+    """
+    proposal = MappingProposal()
+
+    # Look for dimension mentions with column names
+    # Patterns like: "column 'year' as temporal dimension"
+    # or "year - temporal dimension"
+    # or "'year' should be a temporal dimension"
+    dim_patterns = [
+        # 'column' should be a temporal dimension
+        r"[`'\"](\w+)[`'\"]\s+(?:should be|is|as)\s+(?:a\s+)?(\w+)\s+dimension",
+        # Column 'year' ... temporal dimension
+        r"[Cc]olumn\s+[`'\"](\w+)[`'\"].*?(\w+)\s+dimension",
+        # year - temporal dimension
+        r"[`'\"]?(\w+)[`'\"]?\s*[-–]\s*(\w+)\s+dimension",
+        # dimension: year (temporal)
+        r"dimension[:\s]+[`'\"]?(\w+)[`'\"]?\s*\((\w+)\)",
+    ]
+
+    for pattern in dim_patterns:
+        matches = re.finditer(pattern, response, re.IGNORECASE)
+        for match in matches:
+            column = match.group(1)
+            dim_type = match.group(2).lower()
+            if dim_type in ('temporal', 'spatial', 'categorical'):
+                dim = DimensionProposal(column=column, dimension_type=dim_type)
+                # Avoid duplicates
+                if not any(d.column == column for d in proposal.dimensions):
+                    proposal.dimensions.append(dim)
+
+    # Look for measure mentions
+    # Patterns like: "column 'value' as measure" or "'count' measure"
+    measure_patterns = [
+        r"[`'\"](\w+)[`'\"]\s+(?:should be|is|as)\s+(?:a\s+)?measure",
+        r"[Cc]olumn\s+[`'\"](\w+)[`'\"].*?(?:as\s+)?(?:a\s+)?measure",
+        r"[`'\"]?(\w+)[`'\"]?\s*[-–]\s*measure",
+        r"measure[:\s]+[`'\"]?(\w+)[`'\"]?",
+    ]
+
+    for pattern in measure_patterns:
+        matches = re.finditer(pattern, response, re.IGNORECASE)
+        for match in matches:
+            column = match.group(1)
+            measure = MeasureProposal(column=column)
+            # Avoid duplicates
+            if not any(m.column == column for m in proposal.measures):
+                proposal.measures.append(measure)
+
+    return proposal if (proposal.dimensions or proposal.measures) else None
