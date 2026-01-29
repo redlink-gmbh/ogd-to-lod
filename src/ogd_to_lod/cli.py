@@ -37,6 +37,11 @@ def main() -> int:
         nargs="?",
         help="Path to the DCAT metadata file (JSON-LD or Turtle)",
     )
+    parser.add_argument(
+        "--output",
+        "-o",
+        help="Path to save the generated RML mapping (Turtle format)",
+    )
 
     args = parser.parse_args()
 
@@ -138,6 +143,15 @@ def main() -> int:
             print("Generated RML:")
             print("-" * 60)
             print(flow.get_generated_rml())
+
+            # Save RML to file if output path provided
+            if args.output:
+                try:
+                    with open(args.output, 'w', encoding='utf-8') as f:
+                        f.write(flow.get_generated_rml())
+                    print(f"\n✓ RML saved to: {args.output}")
+                except Exception as e:
+                    print(f"\n⚠ Warning: Failed to save RML to {args.output}: {e}", file=sys.stderr)
 
             # Show validation results
             if flow.is_validated():
