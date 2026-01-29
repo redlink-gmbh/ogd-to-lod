@@ -405,6 +405,56 @@ measures:
         assert "measures:" in content
         assert "column: count" in content
 
+    def test_parse_code_block_no_newline_after_language(self):
+        """Test parsing code block without newline after language tag."""
+        response = """```yaml dimensions:
+  - column: year
+```"""
+        parsed = AIService.parse_response(response)
+        assert len(parsed.code_blocks) == 1
+        assert parsed.code_blocks[0].language == "yaml"
+        assert "dimensions:" in parsed.code_blocks[0].content
+
+    def test_parse_code_block_space_before_language(self):
+        """Test parsing code block with space before language tag."""
+        response = """``` yaml
+dimensions:
+  - column: year
+```"""
+        parsed = AIService.parse_response(response)
+        assert len(parsed.code_blocks) == 1
+        assert parsed.code_blocks[0].language == "yaml"
+
+    def test_parse_code_block_uppercase_language(self):
+        """Test parsing code block with uppercase language tag."""
+        response = """```YAML
+dimensions:
+  - column: year
+```"""
+        parsed = AIService.parse_response(response)
+        assert len(parsed.code_blocks) == 1
+        assert parsed.code_blocks[0].language == "yaml"
+
+    def test_parse_code_block_mixed_case_language(self):
+        """Test parsing code block with mixed case language tag."""
+        response = """```Yaml
+dimensions:
+  - column: year
+```"""
+        parsed = AIService.parse_response(response)
+        assert len(parsed.code_blocks) == 1
+        assert parsed.code_blocks[0].language == "yaml"
+
+    def test_parse_code_block_with_tabs(self):
+        """Test parsing code block with tab after backticks."""
+        response = """```\tyaml
+dimensions:
+  - column: year
+```"""
+        parsed = AIService.parse_response(response)
+        assert len(parsed.code_blocks) == 1
+        assert parsed.code_blocks[0].language == "yaml"
+
 
 class TestParsedResponseDataclass:
     """Tests for ParsedResponse dataclass."""

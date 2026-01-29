@@ -20,6 +20,10 @@ from ogd_to_lod.graph.nodes import (
     _build_summary,
     _build_ai_context,
     _parse_proposal,
+    _robust_parse_yaml_proposal,
+    _fix_common_yaml_issues,
+    _parse_yaml_line_by_line,
+    _extract_proposal_from_text,
 )
 from ogd_to_lod.graph.flow import MappingFlow
 
@@ -404,3 +408,217 @@ class TestMappingFlow:
 
         flow._state.mapping_proposal = MappingProposal(status="approved")
         assert flow.is_approved() is True
+
+
+class TestRobustYAMLParsing:
+    """Tests for robust YAML parsing functions."""
+
+    def test_parse_proposal_alternative_keys(self):
+        """Test _parse_proposal with alternative key names."""
+        # Using 'name' instead of 'column'
+        data = {
+            "dimensions": [
+                {"name": "year", "type": "temporal"},
+            ],
+            "measures": [
+                {"name": "value", "unit": "count"},
+            ],
+        }
+        proposal = _parse_proposal(data)
+        assert len(proposal.dimensions) == 1
+        assert proposal.dimensions[0].column == "year"
+        assert len(proposal.measures) == 1
+        assert proposal.measures[0].column == "value"
+
+    def test_parse_proposal_dims_and_metrics_keys(self):
+        """Test _parse_proposal with 'dims' and 'metrics' keys."""
+        data = {
+            "dims": [
+                {"col": "year", "kind": "temporal"},
+            ],
+            "metrics": [
+                {"field": "value"},
+            ],
+        }
+        proposal = _parse_proposal(data)
+        assert len(proposal.dimensions) == 1
+        assert proposal.dimensions[0].column == "year"
+        assert proposal.dimensions[0].dimension_type == "temporal"
+        assert len(proposal.measures) == 1
+        assert proposal.measures[0].column == "value"
+
+    def test_parse_proposal_uppercase_keys(self):
+        """Test _parse_proposal with uppercase keys."""
+        data = {
+            "Dimensions": [
+                {"column": "year", "type": "temporal"},
+            ],
+            "Measures": [
+                {"column": "value"},
+            ],
+        }
+        proposal = _parse_proposal(data)
+        assert len(proposal.dimensions) == 1
+        assert len(proposal.measures) == 1
+
+    def test_parse_proposal_skips_invalid_items(self):
+        """Test _parse_proposal skips non-dict items."""
+        data = {
+            "dimensions": [
+                {"column": "year", "type": "temporal"},
+                "invalid string item",
+                None,
+                {"column": "region", "type": "spatial"},
+            ],
+        }
+        proposal = _parse_proposal(data)
+        assert len(proposal.dimensions) == 2
+
+    def test_parse_proposal_skips_empty_columns(self):
+        """Test _parse_proposal skips items without column names."""
+        data = {
+            "dimensions": [
+                {"column": "year", "type": "temporal"},
+                {"type": "spatial"},  # No column name
+                {"column": "", "type": "categorical"},  # Empty column name
+            ],
+        }
+        proposal = _parse_proposal(data)
+        assert len(proposal.dimensions) == 1
+
+    def test_robust_parse_yaml_standard(self):
+        """Test _robust_parse_yaml_proposal with standard YAML."""
+        yaml_content = """dimensions:
+  - column: year
+    type: temporal
+measures:
+  - column: value
+    unit: count"""
+        proposal = _robust_parse_yaml_proposal(yaml_content)
+        assert proposal is not None
+        assert len(proposal.dimensions) == 1
+        assert len(proposal.measures) == 1
+
+    def test_robust_parse_yaml_with_trailing_commas(self):
+        """Test _robust_parse_yaml_proposal fixes trailing commas."""
+        yaml_content = """dimensions:
+  - column: year,
+    type: temporal,
+measures:
+  - column: value,"""
+        proposal = _robust_parse_yaml_proposal(yaml_content)
+        assert proposal is not None
+        assert len(proposal.dimensions) == 1
+        assert len(proposal.measures) == 1
+
+    def test_robust_parse_yaml_with_smart_quotes(self):
+        """Test _robust_parse_yaml_proposal fixes smart quotes."""
+        yaml_content = """dimensions:
+  - column: "year"
+    type: 'temporal'"""
+        proposal = _robust_parse_yaml_proposal(yaml_content)
+        assert proposal is not None
+        assert len(proposal.dimensions) == 1
+
+    def test_fix_common_yaml_issues_trailing_commas(self):
+        """Test _fix_common_yaml_issues removes trailing commas."""
+        content = "key: value,\nother: data,"
+        fixed = _fix_common_yaml_issues(content)
+        assert ",\n" not in fixed
+        assert "value\n" in fixed
+
+    def test_fix_common_yaml_issues_smart_quotes(self):
+        """Test _fix_common_yaml_issues replaces smart quotes."""
+        content = '\u201csmart\u201d and \u2018single\u2019'
+        fixed = _fix_common_yaml_issues(content)
+        # After fixing, smart quotes should become regular quotes
+        assert '\u201c' not in fixed  # left double quote removed
+        assert '\u201d' not in fixed  # right double quote removed
+        assert '\u2018' not in fixed  # left single quote removed
+        assert '\u2019' not in fixed  # right single quote removed
+
+    def test_fix_common_yaml_issues_tabs(self):
+        """Test _fix_common_yaml_issues converts tabs to spaces."""
+        content = "key:\n\tvalue"
+        fixed = _fix_common_yaml_issues(content)
+        assert "\t" not in fixed
+        assert "  value" in fixed
+
+    def test_fix_common_yaml_issues_missing_space_after_colon(self):
+        """Test _fix_common_yaml_issues adds space after colon."""
+        content = "key:value"
+        fixed = _fix_common_yaml_issues(content)
+        assert "key: value" in fixed
+
+    def test_parse_yaml_line_by_line_basic(self):
+        """Test _parse_yaml_line_by_line with basic structure."""
+        yaml_content = """dimensions:
+  - column: year
+    type: temporal
+  - column: region
+    type: spatial
+measures:
+  - column: value
+    unit: count"""
+        proposal = _parse_yaml_line_by_line(yaml_content)
+        assert proposal is not None
+        assert len(proposal.dimensions) == 2
+        assert len(proposal.measures) == 1
+        assert proposal.dimensions[0].column == "year"
+        assert proposal.dimensions[1].column == "region"
+
+    def test_parse_yaml_line_by_line_inline_format(self):
+        """Test _parse_yaml_line_by_line with inline list items."""
+        yaml_content = """dimensions:
+- column: year
+  type: temporal
+measures:
+- column: value"""
+        proposal = _parse_yaml_line_by_line(yaml_content)
+        assert proposal is not None
+        assert len(proposal.dimensions) == 1
+        assert len(proposal.measures) == 1
+
+    def test_extract_proposal_from_text_dimension_mentions(self):
+        """Test _extract_proposal_from_text finds dimension mentions."""
+        response = """Based on the data:
+- Column 'year' should be a temporal dimension
+- Column 'region' is a spatial dimension
+- 'category' - categorical dimension"""
+        proposal = _extract_proposal_from_text(response)
+        assert proposal is not None
+        assert len(proposal.dimensions) >= 2
+
+    def test_extract_proposal_from_text_measure_mentions(self):
+        """Test _extract_proposal_from_text finds measure mentions."""
+        response = """The measures are:
+- 'value' as a measure
+- 'count' - measure
+- Column `total` should be a measure"""
+        proposal = _extract_proposal_from_text(response)
+        assert proposal is not None
+        assert len(proposal.measures) >= 2
+
+    def test_extract_proposal_from_text_no_duplicates(self):
+        """Test _extract_proposal_from_text avoids duplicates."""
+        response = """Column 'year' is a temporal dimension.
+The 'year' column is a temporal dimension.
+year - temporal dimension"""
+        proposal = _extract_proposal_from_text(response)
+        assert proposal is not None
+        # Should have only one 'year' dimension
+        year_dims = [d for d in proposal.dimensions if d.column == "year"]
+        assert len(year_dims) == 1
+
+    def test_extract_proposal_from_text_returns_none_for_empty(self):
+        """Test _extract_proposal_from_text returns None when nothing found."""
+        response = "This is just a general response with no mapping info."
+        proposal = _extract_proposal_from_text(response)
+        assert proposal is None
+
+    def test_robust_parse_yaml_returns_none_for_invalid(self):
+        """Test _robust_parse_yaml_proposal returns None for completely invalid content."""
+        yaml_content = "this is not yaml at all [ { ] }"
+        proposal = _robust_parse_yaml_proposal(yaml_content)
+        # Should return None or empty proposal
+        assert proposal is None or (not proposal.dimensions and not proposal.measures)
