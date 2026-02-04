@@ -1,12 +1,16 @@
 """LangGraph flow definition for the mapping conversation."""
 
+import os
 from typing import Any
 
+import langsmith
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from ogd_to_lod.ai import AIService
 from ogd_to_lod.config import Config
 from ogd_to_lod.logging import get_logger
+from ogd_to_lod.tracing import get_trace_metadata
 
 from .nodes import (
     analyze_node,
@@ -320,8 +324,16 @@ class MappingFlow:
             base_uri=base_uri,
         )
 
+        # Build RunnableConfig with trace metadata
+        metadata = get_trace_metadata(
+            csv_path=csv_path,
+            base_uri=base_uri,
+            flow_state="start",
+        )
+        config = RunnableConfig(metadata=metadata)
+
         # Run until we need user input
-        self._graph.invoke(self._state.to_dict())
+        self._graph.invoke(self._state.to_dict(), config=config)
 
         return self._state
 
@@ -343,6 +355,29 @@ class MappingFlow:
         if self._state.current_state == FlowState.PREVIEW:
             return self._handle_pr_confirmation(user_input)
 
+        metadata = get_trace_metadata(
+            csv_path=self._state.csv_path,
+            base_uri=self._state.base_uri,
+            flow_state=self._state.current_state.value,
+        )
+
+        tracing_enabled = os.environ.get("LANGSMITH_TRACING", "").lower() == "true"
+
+        if tracing_enabled:
+            with langsmith.trace("continue_with_input", metadata=metadata):
+                return self._process_user_input(user_input)
+        else:
+            return self._process_user_input(user_input)
+
+    def _process_user_input(self, user_input: str) -> GraphState:
+        """Process user input and handle state transitions.
+
+        Args:
+            user_input: User's response.
+
+        Returns:
+            Updated state after processing input.
+        """
         # Process input for proposal states
         self._state = handle_user_input(self._state, user_input, self._ai_service)
 

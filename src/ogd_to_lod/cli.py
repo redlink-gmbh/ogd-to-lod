@@ -6,6 +6,7 @@ import sys
 from ogd_to_lod.config import load_config
 from ogd_to_lod.graph import FlowState, MappingFlow
 from ogd_to_lod.logging import get_logger
+from ogd_to_lod.tracing import configure_tracing
 
 logger = get_logger(__name__)
 
@@ -54,6 +55,9 @@ def main() -> int:
     except ValueError as e:
         print(f"Error: Invalid configuration: {e}", file=sys.stderr)
         return 1
+
+    # Configure LangSmith tracing (uses env vars loaded by load_config)
+    configure_tracing()
 
     print("OGD to LOD - RML Mapping Tool")
     print(f"Configuration loaded from: {args.config}")
