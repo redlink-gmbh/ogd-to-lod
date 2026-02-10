@@ -2,8 +2,8 @@
 # Environment variables can be referenced using ${VAR} or $VAR syntax
 
 github:
-  # Target repository (can also be set via GITHUB_REPO env var)
-  repo: "redlink-gmbh/ogd-to-lod"
+  # Target repository for generated mappings (can also be set via GITHUB_REPO env var)
+  repo: "redlink-gmbh/ogd-to-lod-mappings"
   token: "${GITHUB_TOKEN}"
 
 azure:

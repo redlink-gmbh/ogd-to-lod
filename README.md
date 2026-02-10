@@ -65,6 +65,14 @@ The application uses a YAML configuration file (`config/config.yaml`) with envir
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL |
 | `AZURE_OPENAI_KEY` | Azure OpenAI API key |
 
+### Optional Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GITHUB_REPO` | Target repository for generated mappings | `redlink-gmbh/ogd-to-lod-mappings` |
+| `RMLMAPPER_JAR` | Path to RMLMapper JAR file | `tools/rmlmapper.jar` |
+| `LOG_LEVEL` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) | `INFO` |
+
 ### Configuration File
 
 ```yaml
