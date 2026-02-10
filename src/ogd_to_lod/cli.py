@@ -102,7 +102,8 @@ def main() -> int:
 
         # Show appropriate prompt based on state
         if flow.is_awaiting_pr_confirmation():
-            prompt = "Create a PR with this mapping? (yes/no): "
+            name = flow.state.mapping_name or "mapping"
+            prompt = f"Create a PR for '{name}'? (yes/no/or type a different name): "
         else:
             prompt = "Your response (or 'quit' to exit): "
 

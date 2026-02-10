@@ -16,7 +16,11 @@ from ogd_to_lod.graph.nodes import (
     init_node,
     analyze_node,
     propose_node,
+    preview_node,
+    create_pr_node,
     handle_user_input,
+    suggest_mapping_name,
+    _build_pr_description,
     _build_summary,
     _build_ai_context,
     _parse_proposal,
@@ -696,3 +700,153 @@ year - temporal dimension"""
         proposal = _robust_parse_yaml_proposal(yaml_content)
         # Should return None or empty proposal
         assert proposal is None or (not proposal.dimensions and not proposal.measures)
+
+
+class TestSuggestMappingName:
+    """Tests for suggest_mapping_name helper."""
+
+    def test_from_dcat_title(self):
+        state = GraphState(
+            csv_path="/data/file.csv",
+            dcat_metadata={"title": "Population Statistics 2024"},
+        )
+        assert suggest_mapping_name(state) == "population-statistics-2024"
+
+    def test_from_csv_filename(self):
+        state = GraphState(csv_path="/data/my_dataset.csv")
+        assert suggest_mapping_name(state) == "my-dataset"
+
+    def test_fallback_when_no_inputs(self):
+        state = GraphState()
+        assert suggest_mapping_name(state) == "mapping"
+
+    def test_dcat_title_preferred_over_csv(self):
+        state = GraphState(
+            csv_path="/data/raw.csv",
+            dcat_metadata={"title": "Air Quality Measurements"},
+        )
+        name = suggest_mapping_name(state)
+        assert "air-quality" in name
+        assert "raw" not in name
+
+    def test_special_chars_normalised(self):
+        state = GraphState(
+            dcat_metadata={"title": "Data (2024) — v2.0"},
+        )
+        name = suggest_mapping_name(state)
+        # Should only contain lowercase, digits, hyphens
+        assert all(c.isalnum() or c == "-" for c in name)
+        assert name  # non-empty
+
+
+class TestPreviewNodeMappingName:
+    """Tests for preview_node setting mapping_name."""
+
+    def test_sets_mapping_name(self):
+        state = GraphState(
+            csv_path="/data/population.csv",
+            generated_rml="@prefix rr: <http://example.org/> .",
+        )
+        result = preview_node(state)
+        assert result.mapping_name == "population"
+
+    def test_preserves_existing_mapping_name(self):
+        state = GraphState(
+            csv_path="/data/population.csv",
+            generated_rml="@prefix rr: <http://example.org/> .",
+            mapping_name="custom-name",
+        )
+        result = preview_node(state)
+        assert result.mapping_name == "custom-name"
+
+
+class TestCreatePrNodeEnhancements:
+    """Tests for create_pr_node using mapping_name and placeholder."""
+
+    @patch("ogd_to_lod.graph.nodes.GitHubService")
+    def test_uses_state_mapping_name(self, mock_gh_cls, mock_config):
+        mock_service = MagicMock()
+        mock_service.create_mapping_pr.return_value = MagicMock(
+            pr_url="https://github.com/test/repo/pull/1",
+            pr_number=1,
+        )
+        mock_gh_cls.return_value = mock_service
+
+        state = GraphState(
+            csv_path="/data/file.csv",
+            generated_rml='@prefix rml: <http://semweb.mmlab.be/ns/rml#> .\nex:M rml:logicalSource [ rml:source "file.csv" ].',
+            mapping_name="my-mapping",
+        )
+        create_pr_node(state, mock_config)
+        call_args = mock_service.create_mapping_pr.call_args
+        assert call_args.kwargs["mapping_name"] == "my-mapping"
+
+    @patch("ogd_to_lod.graph.nodes.GitHubService")
+    def test_falls_back_to_csv_filename(self, mock_gh_cls, mock_config):
+        mock_service = MagicMock()
+        mock_service.create_mapping_pr.return_value = MagicMock(
+            pr_url="https://github.com/test/repo/pull/1",
+            pr_number=1,
+        )
+        mock_gh_cls.return_value = mock_service
+
+        state = GraphState(
+            csv_path="/data/fallback.csv",
+            generated_rml='@prefix rml: <http://semweb.mmlab.be/ns/rml#> .\nex:M rml:logicalSource [ rml:source "fallback.csv" ].',
+        )
+        create_pr_node(state, mock_config)
+        call_args = mock_service.create_mapping_pr.call_args
+        assert call_args.kwargs["mapping_name"] == "fallback"
+
+    @patch("ogd_to_lod.graph.nodes.GitHubService")
+    def test_applies_file_url_placeholder(self, mock_gh_cls, mock_config):
+        mock_service = MagicMock()
+        mock_service.create_mapping_pr.return_value = MagicMock(
+            pr_url="https://github.com/test/repo/pull/1",
+            pr_number=1,
+        )
+        mock_gh_cls.return_value = mock_service
+
+        state = GraphState(
+            csv_path="/data/test.csv",
+            generated_rml='@prefix rml: <http://semweb.mmlab.be/ns/rml#> .\nex:M rml:logicalSource [ rml:source "test.csv" ].',
+            mapping_name="test",
+        )
+        create_pr_node(state, mock_config)
+        call_args = mock_service.create_mapping_pr.call_args
+        rml_committed = call_args.kwargs["rml_content"]
+        assert "{{FILE_URL}}" in rml_committed
+        assert '"test.csv"' not in rml_committed
+
+
+class TestBuildPrDescriptionIncludesRdfPreview:
+    """Tests for _build_pr_description including rdf_preview."""
+
+    def test_includes_rdf_preview(self):
+        state = GraphState(
+            csv_path="/data/file.csv",
+            rdf_preview="ex:a ex:b ex:c .",
+        )
+        result = _build_pr_description(state, "test-mapping")
+        assert "ex:a ex:b ex:c" in result
+
+    def test_no_preview_section_when_empty(self):
+        state = GraphState(csv_path="/data/file.csv")
+        result = _build_pr_description(state, "test-mapping")
+        assert "RDF Preview" not in result
+
+
+class TestCustomNameViaPrConfirmation:
+    """Tests for custom mapping name via PR confirmation flow."""
+
+    def test_handle_pr_confirmation_custom_name(self, mock_config, mock_ai_service):
+        flow = MappingFlow(mock_config, mock_ai_service)
+        flow._state.current_state = FlowState.PREVIEW
+        flow._state.generated_rml = "some rml"
+        flow._state.csv_path = "/data/file.csv"
+        flow._state.mapping_name = "auto-suggested"
+
+        result = flow._handle_pr_confirmation("my-custom-name")
+
+        assert result.mapping_name == "my-custom-name"
+        assert result.user_intent == UserIntent.APPROVE

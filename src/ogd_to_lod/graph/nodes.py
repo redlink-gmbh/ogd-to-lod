@@ -18,7 +18,7 @@ from ogd_to_lod.github.pr_template import (
 )
 from ogd_to_lod.logging import get_logger
 from ogd_to_lod.parsers import CSVParseError, DCATParseError, parse_csv, parse_dcat
-from ogd_to_lod.rml import RMLGenerationError, RMLGenerator
+from ogd_to_lod.rml import RMLGenerationError, RMLGenerator, replace_csv_source_with_placeholder
 from ogd_to_lod.validation import RMLValidator, ValidationResult
 
 from .state import (
@@ -364,8 +364,33 @@ def generate_node(state: GraphState, ai_service: AIService) -> GraphState:
     return state
 
 
+def suggest_mapping_name(state: GraphState) -> str:
+    """Derive a mapping name from DCAT title (preferred) or CSV filename (fallback).
+
+    Args:
+        state: Current graph state.
+
+    Returns:
+        A slug-style mapping name suitable for branch and file names.
+    """
+    # Prefer DCAT title
+    if state.dcat_metadata and state.dcat_metadata.get("title"):
+        raw = state.dcat_metadata["title"]
+    elif state.csv_path:
+        csv_filename = state.csv_path.split("/")[-1].split("\\")[-1]
+        raw = csv_filename.rsplit(".", 1)[0] if "." in csv_filename else csv_filename
+    else:
+        raw = "mapping"
+
+    # Normalise: lowercase, replace non-alphanum with hyphens, collapse/strip
+    slug = re.sub(r"[^a-z0-9]+", "-", raw.lower()).strip("-")
+    return slug or "mapping"
+
+
 def preview_node(state: GraphState) -> GraphState:
     """Display RML preview and wait for user confirmation to create PR.
+
+    Also suggests a mapping name (from DCAT title or CSV filename).
 
     Args:
         state: Current graph state with generated RML.
@@ -380,11 +405,17 @@ def preview_node(state: GraphState) -> GraphState:
         state.current_state = FlowState.ERROR
         return state
 
+    # Suggest mapping name if not already set (e.g. by user override)
+    if not state.mapping_name:
+        state.mapping_name = suggest_mapping_name(state)
+        logger.debug("Suggested mapping name: %s", state.mapping_name)
+
     # The CLI will display the RML, we just need to wait for confirmation
     state.awaiting_user_input = True
     state.add_message(
         "assistant",
-        "RML mapping has been generated. Would you like to create a PR with this mapping?"
+        f"RML mapping has been generated as '{state.mapping_name}'. "
+        "Would you like to create a PR with this mapping?"
     )
 
     logger.info("Awaiting user confirmation for PR creation")
@@ -415,9 +446,18 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
         state.current_state = FlowState.ERROR
         return state
 
-    # Derive mapping name from CSV filename
+    # Use state.mapping_name if set, otherwise fall back to CSV filename
+    if state.mapping_name:
+        mapping_name = state.mapping_name
+    else:
+        csv_filename = state.csv_path.split("/")[-1].split("\\")[-1]
+        mapping_name = csv_filename.rsplit(".", 1)[0] if "." in csv_filename else csv_filename
+
+    # Replace local CSV filename with {{FILE_URL}} placeholder
     csv_filename = state.csv_path.split("/")[-1].split("\\")[-1]
-    mapping_name = csv_filename.rsplit(".", 1)[0] if "." in csv_filename else csv_filename
+    rml_content = replace_csv_source_with_placeholder(
+        state.generated_rml, csv_filename,
+    )
 
     # Build PR description
     pr_description = _build_pr_description(state, mapping_name)
@@ -427,7 +467,7 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
         github_service = GitHubService(config.github)
         result = github_service.create_mapping_pr(
             mapping_name=mapping_name,
-            rml_content=state.generated_rml,
+            rml_content=rml_content,
             description=pr_description,
         )
 

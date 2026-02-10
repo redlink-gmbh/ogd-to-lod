@@ -117,6 +117,9 @@ class GraphState:
     validation_error: str | None = None
     validation_retry_count: int = 0
 
+    # Mapping name (populated in PREVIEW state, user-editable)
+    mapping_name: str | None = None
+
     # PR info (populated in CREATE_PR state)
     pr_url: str | None = None
     pr_number: int | None = None
@@ -155,6 +158,7 @@ class GraphState:
             "awaiting_user_input": self.awaiting_user_input,
             "generated_rml": self.generated_rml,
             "rdf_preview": self.rdf_preview,
+            "mapping_name": self.mapping_name,
             "validation_error": self.validation_error,
             "validation_retry_count": self.validation_retry_count,
             "pr_url": self.pr_url,

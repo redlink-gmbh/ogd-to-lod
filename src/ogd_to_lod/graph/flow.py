@@ -207,19 +207,24 @@ class MappingFlow:
     def _wrap_process_pr_confirmation(self, state_dict: dict[str, Any]) -> dict[str, Any]:
         """Wrapper for processing PR confirmation input."""
         if self._state.user_input:
-            user_input = self._state.user_input.lower().strip()
-            if user_input in ("yes", "y", "ok", "create", "create pr", "sure", "proceed"):
+            user_input_lower = self._state.user_input.lower().strip()
+            if user_input_lower in ("yes", "y", "ok", "create", "create pr", "sure", "proceed"):
                 self._state.user_intent = UserIntent.APPROVE
                 self._state.current_state = FlowState.CREATE_PR
                 logger.info("User approved PR creation")
-            elif user_input in ("no", "n", "cancel", "skip", "exit", "quit"):
+            elif user_input_lower in ("no", "n", "cancel", "skip", "exit", "quit"):
                 self._state.user_intent = UserIntent.REJECT
                 self._state.current_state = FlowState.END
                 logger.info("User cancelled PR creation")
             else:
-                # Unknown response, ask again
-                self._state.awaiting_user_input = True
-                logger.info("Unknown response, awaiting clarification")
+                # Treat as custom mapping name
+                self._state.mapping_name = self._state.user_input.strip()
+                self._state.user_intent = UserIntent.APPROVE
+                self._state.current_state = FlowState.CREATE_PR
+                logger.info(
+                    "User provided custom mapping name: %s",
+                    self._state.mapping_name,
+                )
         return self._state.to_dict()
 
     def _wrap_create_pr(self, state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -462,13 +467,11 @@ class MappingFlow:
             )
             logger.info("User cancelled PR creation")
         else:
-            # Unknown response, ask for clarification
-            self._state.awaiting_user_input = True
-            self._state.add_message(
-                "assistant",
-                "Please respond with 'yes' to create a PR or 'no' to skip PR creation."
-            )
-            logger.info("Unknown response, awaiting clarification")
+            # Treat as custom mapping name and proceed to create PR
+            self._state.mapping_name = user_input.strip()
+            self._state.user_intent = UserIntent.APPROVE
+            logger.info("User provided custom mapping name: %s", self._state.mapping_name)
+            self._state = create_pr_node(self._state, self._config)
 
         return self._state
 
