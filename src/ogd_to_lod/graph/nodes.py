@@ -456,7 +456,9 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
     # Replace local CSV filename with {{FILE_URL}} placeholder
     csv_filename = state.csv_path.split("/")[-1].split("\\")[-1]
     rml_content = replace_csv_source_with_placeholder(
-        state.generated_rml, csv_filename,
+        state.generated_rml,
+        csv_filename,
+        source_comment=f"Original source: {state.csv_path}",
     )
 
     # Build PR description

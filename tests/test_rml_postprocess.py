@@ -58,10 +58,10 @@ class TestCommaCSV:
 
     def test_inserts_comment_after_last_prefix(self):
         result = replace_csv_source_with_placeholder(COMMA_RML, "data.csv")
-        assert "# Original CSV source: data.csv" in result
+        assert "# Original source: data.csv" in result
         # Comment should come after the last @prefix line
         prefix_pos = result.rfind("@prefix")
-        comment_pos = result.find("# Original CSV source:")
+        comment_pos = result.find("# Original source:")
         assert comment_pos > prefix_pos
 
 
@@ -75,7 +75,7 @@ class TestNonCommaCSV:
 
     def test_inserts_comment_after_last_prefix(self):
         result = replace_csv_source_with_placeholder(NON_COMMA_RML, "data.csv")
-        assert "# Original CSV source: data.csv" in result
+        assert "# Original source: data.csv" in result
 
 
 class TestCommentPlacement:
@@ -85,7 +85,7 @@ class TestCommentPlacement:
         result = replace_csv_source_with_placeholder(COMMA_RML, "data.csv")
         lines = result.splitlines()
         comment_idx = next(
-            i for i, l in enumerate(lines) if l.startswith("# Original CSV source:")
+            i for i, l in enumerate(lines) if l.startswith("# Original source:")
         )
         # The line before the comment should be a @prefix or blank
         # The comment should be between prefixes and the body
@@ -96,7 +96,7 @@ class TestCommentPlacement:
         """When there are no @prefix lines, comment is prepended."""
         rml = 'ex:TriplesMap rml:logicalSource [ rml:source "data.csv" ].'
         result = replace_csv_source_with_placeholder(rml, "data.csv")
-        assert result.startswith("# Original CSV source: data.csv")
+        assert result.startswith("# Original source: data.csv")
 
 
 class TestNoMatch:
@@ -108,7 +108,7 @@ class TestNoMatch:
 
     def test_does_not_insert_comment(self):
         result = replace_csv_source_with_placeholder(COMMA_RML, "other.csv")
-        assert "# Original CSV source:" not in result
+        assert "# Original source:" not in result
 
 
 class TestMultipleTriplesMaps:
@@ -142,3 +142,33 @@ class TestRegexSpecialChars:
         rml = PREFIXES + '\nex:Map rml:logicalSource [ rml:source "data+extra.csv" ].\n'
         result = replace_csv_source_with_placeholder(rml, "data+extra.csv")
         assert 'rml:source "{{FILE_URL}}"' in result
+
+
+class TestCustomSourceComment:
+    """Custom source_comment parameter."""
+
+    def test_uri_as_source_comment(self):
+        result = replace_csv_source_with_placeholder(
+            COMMA_RML, "data.csv",
+            source_comment="Download: https://data.example.org/datasets/population.csv",
+        )
+        assert "# Download: https://data.example.org/datasets/population.csv" in result
+        assert "# Original source:" not in result
+
+    def test_website_as_source_comment(self):
+        result = replace_csv_source_with_placeholder(
+            COMMA_RML, "data.csv",
+            source_comment="Dataset page: https://opendata.city.example/catalog/12345",
+        )
+        assert "# Dataset page: https://opendata.city.example/catalog/12345" in result
+
+    def test_default_comment_when_none(self):
+        result = replace_csv_source_with_placeholder(COMMA_RML, "data.csv")
+        assert "# Original source: data.csv" in result
+
+    def test_full_path_as_source_comment(self):
+        result = replace_csv_source_with_placeholder(
+            COMMA_RML, "data.csv",
+            source_comment="Original source: /home/user/datasets/population/data.csv",
+        )
+        assert "# Original source: /home/user/datasets/population/data.csv" in result

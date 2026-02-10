@@ -9,17 +9,25 @@ logger = get_logger(__name__)
 PLACEHOLDER = "{{FILE_URL}}"
 
 
-def replace_csv_source_with_placeholder(rml_content: str, csv_filename: str) -> str:
+def replace_csv_source_with_placeholder(
+    rml_content: str,
+    csv_filename: str,
+    source_comment: str | None = None,
+) -> str:
     """Replace CSV source references with a ``{{FILE_URL}}`` placeholder.
 
     Handles both plain ``rml:source "file.csv"`` (comma-delimited CSV)
     and ``csvw:url "file.csv"`` (non-comma delimiter via CSVW Table).
-    A comment recording the original filename is inserted after the
-    last ``@prefix`` line.
+    A comment is inserted after the last ``@prefix`` line to record
+    where the original data can be found.
 
     Args:
         rml_content: The generated RML Turtle string.
         csv_filename: The CSV filename (or path) to replace.
+        source_comment: Free-form comment inserted after the prefix
+            block (e.g. a download URI, dataset page URL, or plain
+            description).  Defaults to ``Original source: <csv_filename>``
+            when *None*.
 
     Returns:
         The RML string with CSV source references replaced by the
@@ -42,22 +50,23 @@ def replace_csv_source_with_placeholder(rml_content: str, csv_filename: str) -> 
     logger.debug("Replaced %d CSV source reference(s) with %s", count, PLACEHOLDER)
 
     # Insert a comment after the last @prefix line
-    result = _insert_source_comment(result, csv_filename)
+    comment_text = source_comment if source_comment is not None else f"Original source: {csv_filename}"
+    result = _insert_comment_after_prefixes(result, comment_text)
 
     return result
 
 
-def _insert_source_comment(rml_content: str, csv_filename: str) -> str:
-    """Insert an ``# Original CSV source:`` comment after the last ``@prefix`` line.
+def _insert_comment_after_prefixes(rml_content: str, comment_text: str) -> str:
+    """Insert a ``#``-prefixed comment after the last ``@prefix`` line.
 
     Args:
         rml_content: RML Turtle string.
-        csv_filename: Original CSV filename to record.
+        comment_text: Free-form text to insert as a Turtle comment.
 
     Returns:
         RML string with the comment inserted.
     """
-    comment = f"# Original CSV source: {csv_filename}"
+    comment = f"# {comment_text}"
 
     # Find the last @prefix line
     last_prefix_end = -1
