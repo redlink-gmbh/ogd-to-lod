@@ -6,6 +6,7 @@ import sys
 from ogd_to_lod.config import load_config
 from ogd_to_lod.graph import FlowState, MappingFlow
 from ogd_to_lod.logging import get_logger
+from ogd_to_lod.rml import replace_csv_source_with_placeholder
 
 logger = get_logger(__name__)
 
@@ -148,8 +149,16 @@ def main() -> int:
             # Save RML to file if output path provided
             if args.output:
                 try:
+                    rml_output = flow.get_generated_rml()
+                    # Replace local CSV filename with {{FILE_URL}} placeholder
+                    csv_filename = args.csv_path.split("/")[-1].split("\\")[-1]
+                    rml_output = replace_csv_source_with_placeholder(
+                        rml_output,
+                        csv_filename,
+                        source_comment=f"Original source: {args.csv_path}",
+                    )
                     with open(args.output, 'w', encoding='utf-8') as f:
-                        f.write(flow.get_generated_rml())
+                        f.write(rml_output)
                     print(f"\n✓ RML saved to: {args.output}")
                 except Exception as e:
                     print(f"\n⚠ Warning: Failed to save RML to {args.output}: {e}", file=sys.stderr)

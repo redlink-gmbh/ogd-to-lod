@@ -489,7 +489,7 @@ class MappingFlow:
 
     def is_complete(self) -> bool:
         """Check if flow has completed."""
-        return self._state.current_state in (FlowState.END, FlowState.ERROR, FlowState.PREVIEW)
+        return self._state.current_state in (FlowState.END, FlowState.ERROR)
 
     def is_approved(self) -> bool:
         """Check if mapping has been approved."""

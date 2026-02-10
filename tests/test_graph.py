@@ -478,6 +478,10 @@ class TestMappingFlow:
         flow._state.current_state = FlowState.ERROR
         assert flow.is_complete() is True
 
+        # PREVIEW is NOT complete — still awaiting PR confirmation
+        flow._state.current_state = FlowState.PREVIEW
+        assert flow.is_complete() is False
+
     def test_is_approved(self, mock_config, mock_ai_service):
         """Test is_approved method."""
         flow = MappingFlow(mock_config, mock_ai_service)
