@@ -11,6 +11,7 @@ from ogd_to_lod.logging import get_logger
 from .nodes import (
     MAX_SYNTAX_RETRIES,
     analyze_node,
+    confirm_name_node,
     create_pr_node,
     generate_node,
     handle_user_input,
@@ -63,6 +64,9 @@ class MappingFlow:
         graph.add_node("process_input", self._wrap_process_input)
         graph.add_node("generate", self._wrap_generate)
         graph.add_node("validate", self._wrap_validate)
+        graph.add_node("confirm_name", self._wrap_confirm_name)
+        graph.add_node("wait_for_name", self._wait_for_name)
+        graph.add_node("process_name", self._wrap_process_name)
         graph.add_node("preview", self._wrap_preview)
         graph.add_node("wait_for_pr_confirmation", self._wait_for_pr_confirmation)
         graph.add_node("process_pr_confirmation", self._wrap_process_pr_confirmation)
@@ -117,9 +121,20 @@ class MappingFlow:
             "validate",
             self._route_from_validate,
             {
-                "preview": "preview",  # Validation passed, proceed to preview
+                "confirm_name": "confirm_name",  # Validation passed, ask for name
                 "refine": "propose",  # Validation failed, loop back for refinement
                 "error": "error",
+            },
+        )
+
+        graph.add_edge("confirm_name", "wait_for_name")
+
+        graph.add_conditional_edges(
+            "process_name",
+            self._route_from_process_name,
+            {
+                "preview": "preview",  # Name confirmed, show PR preview
+                "wait": "wait_for_name",  # Ask again
             },
         )
 
@@ -194,6 +209,28 @@ class MappingFlow:
         )
         return self._state.to_dict()
 
+    def _wrap_confirm_name(self, state_dict: dict[str, Any]) -> dict[str, Any]:
+        """Wrapper for confirm_name node."""
+        self._state = confirm_name_node(self._state)
+        return self._state.to_dict()
+
+    def _wait_for_name(self, state_dict: dict[str, Any]) -> dict[str, Any]:
+        """Node that waits for name confirmation input."""
+        self._state.awaiting_user_input = True
+        return self._state.to_dict()
+
+    def _wrap_process_name(self, state_dict: dict[str, Any]) -> dict[str, Any]:
+        """Process the name confirmation input."""
+        if self._state.user_input is not None:
+            name_input = self._state.user_input.strip()
+            if name_input:
+                self._state.mapping_name = name_input
+                logger.info("User provided custom mapping name: %s", self._state.mapping_name)
+            else:
+                logger.info("User accepted suggested name: %s", self._state.mapping_name)
+            self._state.current_state = FlowState.PREVIEW
+        return self._state.to_dict()
+
     def _wrap_preview(self, state_dict: dict[str, Any]) -> dict[str, Any]:
         """Wrapper for preview node."""
         self._state = preview_node(self._state)
@@ -205,7 +242,7 @@ class MappingFlow:
         return self._state.to_dict()
 
     def _wrap_process_pr_confirmation(self, state_dict: dict[str, Any]) -> dict[str, Any]:
-        """Wrapper for processing PR confirmation input."""
+        """Wrapper for processing PR confirmation input (yes/no only)."""
         if self._state.user_input:
             user_input_lower = self._state.user_input.lower().strip()
             if user_input_lower in ("yes", "y", "ok", "create", "create pr", "sure", "proceed"):
@@ -217,14 +254,9 @@ class MappingFlow:
                 self._state.current_state = FlowState.END
                 logger.info("User cancelled PR creation")
             else:
-                # Treat as custom mapping name
-                self._state.mapping_name = self._state.user_input.strip()
-                self._state.user_intent = UserIntent.APPROVE
-                self._state.current_state = FlowState.CREATE_PR
-                logger.info(
-                    "User provided custom mapping name: %s",
-                    self._state.mapping_name,
-                )
+                # Unrecognised input — prompt again
+                self._state.awaiting_user_input = True
+                logger.info("Unrecognised PR confirmation input, prompting again")
         return self._state.to_dict()
 
     def _wrap_create_pr(self, state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -273,7 +305,13 @@ class MappingFlow:
             return "error"
         if self._state.current_state == FlowState.REFINE:
             return "refine"
-        return "preview"
+        return "confirm_name"
+
+    def _route_from_process_name(self, state_dict: dict[str, Any]) -> str:
+        """Route from process_name node."""
+        if self._state.current_state == FlowState.PREVIEW:
+            return "preview"
+        return "wait"
 
     def _route_from_pr_confirmation(self, state_dict: dict[str, Any]) -> str:
         """Route based on PR confirmation response."""
@@ -347,6 +385,10 @@ class MappingFlow:
         self._state.user_input = user_input
         self._state.awaiting_user_input = False
 
+        # Handle name confirmation if in CONFIRM_NAME state
+        if self._state.current_state == FlowState.CONFIRM_NAME:
+            return self._handle_name_confirmation(user_input)
+
         # Handle PR confirmation if in PREVIEW state
         if self._state.current_state == FlowState.PREVIEW:
             return self._handle_pr_confirmation(user_input)
@@ -373,9 +415,9 @@ class MappingFlow:
                         use_docker=self._config.rml.rmlmapper_use_docker,
                     )
 
-                # If all validation passed, move to PREVIEW
+                # If all validation passed, move to CONFIRM_NAME
                 if self._state.current_state == FlowState.PREVIEW:
-                    self._state = preview_node(self._state)
+                    self._state = confirm_name_node(self._state)
 
                 # If Tier 2 failed, escalate to user via REFINE → PROPOSE
                 elif self._state.current_state == FlowState.REFINE:
@@ -442,8 +484,34 @@ class MappingFlow:
         if self._state.mapping_proposal:
             self._state.mapping_proposal.status = "refining"
 
+    def _handle_name_confirmation(self, user_input: str) -> GraphState:
+        """Handle user confirmation of the mapping name.
+
+        Empty input accepts the suggested name; non-empty input overrides it.
+        Then transitions to PREVIEW (builds and shows the PR description).
+
+        Args:
+            user_input: User's response (empty = accept, non-empty = override).
+
+        Returns:
+            Updated state after processing name confirmation.
+        """
+        self._state.add_message("user", user_input)
+
+        name_input = user_input.strip()
+        if name_input:
+            self._state.mapping_name = name_input
+            logger.info("User provided custom mapping name: %s", self._state.mapping_name)
+        else:
+            logger.info("User accepted suggested name: %s", self._state.mapping_name)
+
+        # Build and show PR preview
+        self._state = preview_node(self._state)
+
+        return self._state
+
     def _handle_pr_confirmation(self, user_input: str) -> GraphState:
-        """Handle user confirmation for PR creation.
+        """Handle user confirmation for PR creation (yes/no only).
 
         Args:
             user_input: User's response.
@@ -467,11 +535,9 @@ class MappingFlow:
             )
             logger.info("User cancelled PR creation")
         else:
-            # Treat as custom mapping name and proceed to create PR
-            self._state.mapping_name = user_input.strip()
-            self._state.user_intent = UserIntent.APPROVE
-            logger.info("User provided custom mapping name: %s", self._state.mapping_name)
-            self._state = create_pr_node(self._state, self._config)
+            # Unrecognised input — prompt again
+            self._state.awaiting_user_input = True
+            logger.info("Unrecognised PR confirmation input, prompting again")
 
         return self._state
 
@@ -525,12 +591,23 @@ class MappingFlow:
         """Check if an RDF preview is available."""
         return self._state.rdf_preview is not None
 
+    def is_awaiting_name_confirmation(self) -> bool:
+        """Check if flow is waiting for mapping name confirmation."""
+        return (
+            self._state.current_state == FlowState.CONFIRM_NAME
+            and self._state.awaiting_user_input
+        )
+
     def is_awaiting_pr_confirmation(self) -> bool:
         """Check if flow is waiting for PR creation confirmation."""
         return (
             self._state.current_state == FlowState.PREVIEW
             and self._state.awaiting_user_input
         )
+
+    def get_pr_description(self) -> str | None:
+        """Get the built PR description."""
+        return self._state.pr_description
 
     def has_created_pr(self) -> bool:
         """Check if PR has been created."""

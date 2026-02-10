@@ -14,6 +14,7 @@ class FlowState(Enum):
     REFINE = "refine"
     GENERATE = "generate"
     VALIDATE = "validate"
+    CONFIRM_NAME = "confirm_name"
     PREVIEW = "preview"
     CREATE_PR = "create_pr"
     END = "end"
@@ -117,8 +118,11 @@ class GraphState:
     validation_error: str | None = None
     validation_retry_count: int = 0
 
-    # Mapping name (populated in PREVIEW state, user-editable)
+    # Mapping name (populated in CONFIRM_NAME state, user-editable)
     mapping_name: str | None = None
+
+    # PR description (populated in PREVIEW state)
+    pr_description: str | None = None
 
     # PR info (populated in CREATE_PR state)
     pr_url: str | None = None
@@ -159,6 +163,7 @@ class GraphState:
             "generated_rml": self.generated_rml,
             "rdf_preview": self.rdf_preview,
             "mapping_name": self.mapping_name,
+            "pr_description": self.pr_description,
             "validation_error": self.validation_error,
             "validation_retry_count": self.validation_retry_count,
             "pr_url": self.pr_url,

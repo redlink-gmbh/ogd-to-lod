@@ -4,6 +4,7 @@ from ogd_to_lod.graph.flow import MappingFlow
 from ogd_to_lod.graph.nodes import (
     MAX_SYNTAX_RETRIES,
     analyze_node,
+    confirm_name_node,
     create_pr_node,
     generate_node,
     handle_user_input,
@@ -35,6 +36,7 @@ __all__ = [
     # Nodes
     "MAX_SYNTAX_RETRIES",
     "analyze_node",
+    "confirm_name_node",
     "create_pr_node",
     "generate_node",
     "handle_user_input",

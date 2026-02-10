@@ -102,9 +102,11 @@ def main() -> int:
         print("\n" + "-" * 60)
 
         # Show appropriate prompt based on state
-        if flow.is_awaiting_pr_confirmation():
+        if flow.is_awaiting_name_confirmation():
             name = flow.state.mapping_name or "mapping"
-            prompt = f"Create a PR for '{name}'? (yes/no/or type a different name): "
+            prompt = f"Dataset name ['{name}']: "
+        elif flow.is_awaiting_pr_confirmation():
+            prompt = "Push to GitHub and create PR? (yes/no): "
         else:
             prompt = "Your response (or 'quit' to exit): "
 
@@ -118,7 +120,8 @@ def main() -> int:
             print("Exiting...")
             return 0
 
-        if not user_input:
+        # Allow empty input for name confirmation (Enter = accept suggested name)
+        if not user_input and not flow.is_awaiting_name_confirmation():
             continue
 
         try:
@@ -132,6 +135,15 @@ def main() -> int:
         if state.current_state == FlowState.ERROR:
             print(f"\nError: {state.error_message}", file=sys.stderr)
             return 1
+
+        # Show PR preview when transitioning to PREVIEW state
+        if flow.is_awaiting_pr_confirmation() and flow.get_pr_description():
+            print("\n" + "=" * 60)
+            print("PR Preview:")
+            print("-" * 60)
+            print(flow.get_pr_description())
+            print("=" * 60)
+            continue
 
         # Show updated proposal if in refinement
         if flow.get_proposal_text() and state.current_state == FlowState.PROPOSE:

@@ -387,18 +387,19 @@ def suggest_mapping_name(state: GraphState) -> str:
     return slug or "mapping"
 
 
-def preview_node(state: GraphState) -> GraphState:
-    """Display RML preview and wait for user confirmation to create PR.
+def confirm_name_node(state: GraphState) -> GraphState:
+    """Ask the user to confirm or change the mapping name.
 
-    Also suggests a mapping name (from DCAT title or CSV filename).
+    Suggests a mapping name (from DCAT title or CSV filename) and waits
+    for the user to accept it or type a different name.
 
     Args:
         state: Current graph state with generated RML.
 
     Returns:
-        Updated state awaiting user confirmation.
+        Updated state awaiting name confirmation.
     """
-    logger.info("Entering PREVIEW state")
+    logger.info("Entering CONFIRM_NAME state")
 
     if not state.generated_rml:
         state.error_message = "No RML generated for preview"
@@ -410,15 +411,51 @@ def preview_node(state: GraphState) -> GraphState:
         state.mapping_name = suggest_mapping_name(state)
         logger.debug("Suggested mapping name: %s", state.mapping_name)
 
-    # The CLI will display the RML, we just need to wait for confirmation
+    state.current_state = FlowState.CONFIRM_NAME
     state.awaiting_user_input = True
     state.add_message(
         "assistant",
-        f"RML mapping has been generated as '{state.mapping_name}'. "
-        "Would you like to create a PR with this mapping?"
+        f"Suggested mapping name: '{state.mapping_name}'. "
+        "Press Enter to accept or type a different name:"
     )
 
-    logger.info("Awaiting user confirmation for PR creation")
+    logger.info("Awaiting name confirmation")
+
+    return state
+
+
+def preview_node(state: GraphState) -> GraphState:
+    """Build the PR description and show it for confirmation.
+
+    Builds the full PR description from the template and stores it in
+    ``state.pr_description``, then asks the user to confirm pushing.
+
+    Args:
+        state: Current graph state with confirmed mapping name.
+
+    Returns:
+        Updated state awaiting push confirmation.
+    """
+    logger.info("Entering PREVIEW state")
+
+    if not state.generated_rml:
+        state.error_message = "No RML generated for preview"
+        state.current_state = FlowState.ERROR
+        return state
+
+    # Build and store PR description
+    mapping_name = state.mapping_name or "mapping"
+    state.pr_description = _build_pr_description(state, mapping_name)
+
+    state.current_state = FlowState.PREVIEW
+    state.awaiting_user_input = True
+    state.add_message(
+        "assistant",
+        f"Here is the PR that will be created:\n\n{state.pr_description}\n\n"
+        "Push to GitHub? (yes/no)"
+    )
+
+    logger.info("Awaiting push confirmation")
 
     return state
 

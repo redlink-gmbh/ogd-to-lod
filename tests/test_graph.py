@@ -16,6 +16,7 @@ from ogd_to_lod.graph.nodes import (
     init_node,
     analyze_node,
     propose_node,
+    confirm_name_node,
     preview_node,
     create_pr_node,
     handle_user_input,
@@ -482,6 +483,10 @@ class TestMappingFlow:
         flow._state.current_state = FlowState.PREVIEW
         assert flow.is_complete() is False
 
+        # CONFIRM_NAME is NOT complete — still awaiting name confirmation
+        flow._state.current_state = FlowState.CONFIRM_NAME
+        assert flow.is_complete() is False
+
     def test_is_approved(self, mock_config, mock_ai_service):
         """Test is_approved method."""
         flow = MappingFlow(mock_config, mock_ai_service)
@@ -743,16 +748,27 @@ class TestSuggestMappingName:
         assert name  # non-empty
 
 
-class TestPreviewNodeMappingName:
-    """Tests for preview_node setting mapping_name."""
+class TestConfirmNameNode:
+    """Tests for confirm_name_node setting mapping_name."""
 
-    def test_sets_mapping_name(self):
+    def test_suggests_name_from_csv(self):
         state = GraphState(
             csv_path="/data/population.csv",
             generated_rml="@prefix rr: <http://example.org/> .",
         )
-        result = preview_node(state)
+        result = confirm_name_node(state)
         assert result.mapping_name == "population"
+        assert result.current_state == FlowState.CONFIRM_NAME
+        assert result.awaiting_user_input is True
+
+    def test_suggests_name_from_dcat(self):
+        state = GraphState(
+            csv_path="/data/file.csv",
+            generated_rml="@prefix rr: <http://example.org/> .",
+            dcat_metadata={"title": "Population Statistics 2024"},
+        )
+        result = confirm_name_node(state)
+        assert result.mapping_name == "population-statistics-2024"
 
     def test_preserves_existing_mapping_name(self):
         state = GraphState(
@@ -760,8 +776,13 @@ class TestPreviewNodeMappingName:
             generated_rml="@prefix rr: <http://example.org/> .",
             mapping_name="custom-name",
         )
-        result = preview_node(state)
+        result = confirm_name_node(state)
         assert result.mapping_name == "custom-name"
+
+    def test_error_when_no_rml(self):
+        state = GraphState(csv_path="/data/file.csv")
+        result = confirm_name_node(state)
+        assert result.current_state == FlowState.ERROR
 
 
 class TestCreatePrNodeEnhancements:
@@ -840,17 +861,95 @@ class TestBuildPrDescriptionIncludesRdfPreview:
         assert "RDF Preview" not in result
 
 
-class TestCustomNameViaPrConfirmation:
-    """Tests for custom mapping name via PR confirmation flow."""
+class TestPreviewNode:
+    """Tests for preview_node building PR description."""
 
-    def test_handle_pr_confirmation_custom_name(self, mock_config, mock_ai_service):
+    def test_builds_pr_description(self):
+        state = GraphState(
+            csv_path="/data/population.csv",
+            generated_rml="@prefix rr: <http://example.org/> .",
+            mapping_name="population",
+        )
+        result = preview_node(state)
+        assert result.pr_description is not None
+        assert result.current_state == FlowState.PREVIEW
+        assert result.awaiting_user_input is True
+
+    def test_error_when_no_rml(self):
+        state = GraphState(csv_path="/data/file.csv", mapping_name="test")
+        result = preview_node(state)
+        assert result.current_state == FlowState.ERROR
+
+    def test_uses_mapping_name_in_description(self):
+        state = GraphState(
+            csv_path="/data/pop.csv",
+            generated_rml="@prefix rr: <http://example.org/> .",
+            mapping_name="my-mapping",
+        )
+        result = preview_node(state)
+        assert "my-mapping" in result.pr_description
+
+
+class TestNameConfirmationFlow:
+    """Tests for the name confirmation step in the three-step flow."""
+
+    def test_empty_input_keeps_suggested_name(self, mock_config, mock_ai_service):
+        flow = MappingFlow(mock_config, mock_ai_service)
+        flow._state.current_state = FlowState.CONFIRM_NAME
+        flow._state.generated_rml = "some rml"
+        flow._state.csv_path = "/data/file.csv"
+        flow._state.mapping_name = "auto-suggested"
+        flow._state.awaiting_user_input = True
+
+        result = flow._handle_name_confirmation("")
+
+        assert result.mapping_name == "auto-suggested"
+        assert result.current_state == FlowState.PREVIEW
+        assert result.pr_description is not None
+
+    def test_custom_input_overrides_name(self, mock_config, mock_ai_service):
+        flow = MappingFlow(mock_config, mock_ai_service)
+        flow._state.current_state = FlowState.CONFIRM_NAME
+        flow._state.generated_rml = "some rml"
+        flow._state.csv_path = "/data/file.csv"
+        flow._state.mapping_name = "auto-suggested"
+        flow._state.awaiting_user_input = True
+
+        result = flow._handle_name_confirmation("my-custom-name")
+
+        assert result.mapping_name == "my-custom-name"
+        assert result.current_state == FlowState.PREVIEW
+
+
+class TestPrConfirmationSimplified:
+    """Tests for simplified PR confirmation (yes/no only, no custom-name branch)."""
+
+    def test_yes_creates_pr(self, mock_config, mock_ai_service):
         flow = MappingFlow(mock_config, mock_ai_service)
         flow._state.current_state = FlowState.PREVIEW
         flow._state.generated_rml = "some rml"
         flow._state.csv_path = "/data/file.csv"
-        flow._state.mapping_name = "auto-suggested"
+        flow._state.mapping_name = "test"
+        flow._state.awaiting_user_input = True
 
-        result = flow._handle_pr_confirmation("my-custom-name")
-
-        assert result.mapping_name == "my-custom-name"
+        result = flow._handle_pr_confirmation("yes")
         assert result.user_intent == UserIntent.APPROVE
+
+    def test_no_cancels(self, mock_config, mock_ai_service):
+        flow = MappingFlow(mock_config, mock_ai_service)
+        flow._state.current_state = FlowState.PREVIEW
+        flow._state.awaiting_user_input = True
+
+        result = flow._handle_pr_confirmation("no")
+        assert result.current_state == FlowState.END
+        assert result.user_intent == UserIntent.REJECT
+
+    def test_unrecognised_input_prompts_again(self, mock_config, mock_ai_service):
+        flow = MappingFlow(mock_config, mock_ai_service)
+        flow._state.current_state = FlowState.PREVIEW
+        flow._state.awaiting_user_input = True
+
+        result = flow._handle_pr_confirmation("some-random-text")
+        assert result.awaiting_user_input is True
+        # Should NOT treat as custom name — stays in PREVIEW
+        assert result.current_state == FlowState.PREVIEW
