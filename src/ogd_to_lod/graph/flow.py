@@ -233,7 +233,7 @@ class MappingFlow:
 
     def _wrap_preview(self, state_dict: dict[str, Any]) -> dict[str, Any]:
         """Wrapper for preview node."""
-        self._state = preview_node(self._state)
+        self._state = preview_node(self._state, self._ai_service)
         return self._state.to_dict()
 
     def _wait_for_pr_confirmation(self, state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -506,7 +506,7 @@ class MappingFlow:
             logger.info("User accepted suggested name: %s", self._state.mapping_name)
 
         # Build and show PR preview
-        self._state = preview_node(self._state)
+        self._state = preview_node(self._state, self._ai_service)
 
         return self._state
 

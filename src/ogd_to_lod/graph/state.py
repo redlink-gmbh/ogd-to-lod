@@ -118,6 +118,9 @@ class GraphState:
     validation_error: str | None = None
     validation_retry_count: int = 0
 
+    # AI-generated summary of mapping decisions (populated in PREVIEW state)
+    mapping_decisions: str | None = None
+
     # Mapping name (populated in CONFIRM_NAME state, user-editable)
     mapping_name: str | None = None
 
@@ -162,6 +165,7 @@ class GraphState:
             "awaiting_user_input": self.awaiting_user_input,
             "generated_rml": self.generated_rml,
             "rdf_preview": self.rdf_preview,
+            "mapping_decisions": self.mapping_decisions,
             "mapping_name": self.mapping_name,
             "pr_description": self.pr_description,
             "validation_error": self.validation_error,

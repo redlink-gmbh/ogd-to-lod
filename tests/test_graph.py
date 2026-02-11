@@ -855,10 +855,10 @@ class TestBuildPrDescriptionIncludesRdfPreview:
         result = _build_pr_description(state, "test-mapping")
         assert "ex:a ex:b ex:c" in result
 
-    def test_no_preview_section_when_empty(self):
+    def test_no_rdf_content_when_empty(self):
         state = GraphState(csv_path="/data/file.csv")
         result = _build_pr_description(state, "test-mapping")
-        assert "RDF Preview" not in result
+        assert "```turtle" not in result
 
 
 class TestPreviewNode:

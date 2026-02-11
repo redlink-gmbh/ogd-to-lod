@@ -10,11 +10,11 @@ from ogd_to_lod.ai import AIService
 from ogd_to_lod.config import Config
 from ogd_to_lod.github import GitHubService, PRCreationError
 from ogd_to_lod.github.pr_template import (
-    build_data_sources_section,
-    build_dcat_section,
+    build_csv_preview_section,
     build_mapping_structure_section,
     build_rdf_preview_section,
     load_pr_template,
+    render_pr_template,
 )
 from ogd_to_lod.logging import get_logger
 from ogd_to_lod.parsers import CSVParseError, DCATParseError, parse_csv, parse_dcat
@@ -89,7 +89,7 @@ def analyze_node(state: GraphState, config: Config) -> GraphState:
 
     # Parse CSV
     try:
-        csv_data = parse_csv(state.csv_path)
+        csv_data = parse_csv(state.csv_path, sample_rows=10)
         state.csv_schema = {
             "source": csv_data.source,
             "columns": [
@@ -101,7 +101,7 @@ def analyze_node(state: GraphState, config: Config) -> GraphState:
                 for col in csv_data.columns
             ],
             "total_rows": csv_data.total_rows,
-            "sample_rows": csv_data.sample_rows[:3],
+            "sample_rows": csv_data.sample_rows[:10],
             "delimiter": csv_data.delimiter,
         }
         logger.debug(f"Parsed CSV with {len(csv_data.columns)} columns")
@@ -424,14 +424,19 @@ def confirm_name_node(state: GraphState) -> GraphState:
     return state
 
 
-def preview_node(state: GraphState) -> GraphState:
+def preview_node(state: GraphState, ai_service: AIService | None = None) -> GraphState:
     """Build the PR description and show it for confirmation.
 
     Builds the full PR description from the template and stores it in
     ``state.pr_description``, then asks the user to confirm pushing.
 
+    When *ai_service* is provided and ``state.mapping_decisions`` is not
+    yet set, a short AI-generated summary of the key mapping decisions
+    is produced and stored in the state.
+
     Args:
         state: Current graph state with confirmed mapping name.
+        ai_service: Optional AI service for generating decision summaries.
 
     Returns:
         Updated state awaiting push confirmation.
@@ -442,6 +447,23 @@ def preview_node(state: GraphState) -> GraphState:
         state.error_message = "No RML generated for preview"
         state.current_state = FlowState.ERROR
         return state
+
+    # Generate mapping decisions summary if AI service is available
+    if ai_service is not None and state.mapping_decisions is None:
+        try:
+            prompt = (
+                "Based on the conversation so far, write a brief summary (3-5 bullet points) "
+                "of the key mapping decisions:\n"
+                "- Which columns became dimensions vs measures and why\n"
+                "- Any columns that were dropped and why\n"
+                "- Hierarchy or aggregation choices\n"
+                "Keep it concise — this will appear in a PR description."
+            )
+            decisions = ai_service.send_message(prompt)
+            state.mapping_decisions = decisions.strip()
+            logger.debug("Generated mapping decisions summary")
+        except Exception:
+            logger.warning("Failed to generate mapping decisions summary", exc_info=True)
 
     # Build and store PR description
     mapping_name = state.mapping_name or "mapping"
@@ -542,19 +564,33 @@ def _build_pr_description(state: GraphState, mapping_name: str) -> str:
     Returns:
         Formatted PR description in markdown.
     """
-    template = load_pr_template(Path("config/pr_template.md"))
+    template_text = load_pr_template(Path("config/pr_template.md"))
 
-    return template.safe_substitute(
-        mapping_name=mapping_name,
-        data_sources=build_data_sources_section(
-            csv_path=state.csv_path,
-            dcat_path=state.dcat_path,
-            base_uri=state.base_uri,
+    # Derive dataset name: prefer DCAT title, fall back to mapping_name
+    dataset_name = mapping_name
+    if state.dcat_metadata and state.dcat_metadata.get("title"):
+        dataset_name = state.dcat_metadata["title"]
+
+    # Derive dataset description from DCAT
+    dataset_description = ""
+    if state.dcat_metadata and state.dcat_metadata.get("description"):
+        desc = state.dcat_metadata["description"]
+        dataset_description = desc[:200] + "..." if len(desc) > 200 else desc
+
+    data = {
+        "dataset_name": dataset_name,
+        "dataset_description": dataset_description,
+        "csv_source": f"`{state.csv_path}`" if state.csv_path else "",
+        "dcat_source": f"`{state.dcat_path}`" if state.dcat_path else "",
+        "base_uri": f"`{state.base_uri}`" if state.base_uri else "",
+        "mapping_structure": build_mapping_structure_section(
+            state.mapping_proposal, state.mapping_decisions
         ),
-        dcat_section=build_dcat_section(state.dcat_metadata),
-        mapping_structure=build_mapping_structure_section(state.mapping_proposal),
-        rdf_preview_section=build_rdf_preview_section(state.rdf_preview),
-    )
+        "csv_preview": build_csv_preview_section(state.csv_schema),
+        "rdf_preview": build_rdf_preview_section(state.rdf_preview),
+    }
+
+    return render_pr_template(template_text, data)
 
 
 def _build_summary(csv_schema: dict[str, Any] | None, dcat_metadata: dict[str, Any] | None) -> str:

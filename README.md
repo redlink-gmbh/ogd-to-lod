@@ -105,6 +105,32 @@ ogd-to-lod <csv_path> <dcat_path>
 - `--base-uri`, `-b`: Base URI for generated resources (overrides config)
 - `--help`: Show help message
 
+## PR Template
+
+The PR description is generated from a Markdown template (`config/pr_template.md`) using `{{placeholder}}` syntax.
+
+### Placeholder Syntax
+
+- `{{Name}}` — replaced with a dynamic value at render time
+- `{{Name|default value}}` — uses the default if no value is provided
+
+### Available Placeholders
+
+| Placeholder | Key | Type | Data Source |
+|-------------|-----|------|-------------|
+| `{{Dataset Name}}` | `dataset_name` | inline | DCAT title or mapping name |
+| `{{Dataset Description}}` | `dataset_description` | inline | DCAT description |
+| `{{CSV Source, preferrably a URL}}` | `csv_source` | inline | CSV file path |
+| `{{DCAT Source, preferrably a URL}}` | `dcat_source` | inline | DCAT file path |
+| `{{Base URI}}` | `base_uri` | inline | Base URI from config |
+| `{{contains reasoning behind mapping, decisions made and shows mapping}}` | `mapping_structure` | block | AI proposal (dimensions/measures) |
+| `{{show first 10 lines of CSV}}` | `csv_preview` | block | Parsed CSV sample rows |
+| `{{shows a meaningful amount of lines of generated RDF}}` | `rdf_preview` | block | RMLMapper output |
+
+**Inline** placeholders replace only the `{{…}}` token. **Block** placeholders replace the token and all example content below it (up to the next `###` or `---` boundary).
+
+To add a custom placeholder, register it in `_PLACEHOLDER_REGISTRY` in `src/ogd_to_lod/github/pr_template.py`.
+
 ## Development
 
 ### Running Tests
