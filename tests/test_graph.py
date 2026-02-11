@@ -1172,6 +1172,11 @@ class TestPrDescriptionUsesUrls:
         assert "`/data/file.csv`" in result
         assert "`/data/dcat.ttl`" in result
 
+    def test_not_provided_when_no_source(self):
+        state = GraphState()
+        result = _build_pr_description(state, "test-mapping")
+        assert "(not provided)" in result
+
 
 class TestIsAwaitingHelpers:
     """Tests for is_awaiting_* helper methods."""

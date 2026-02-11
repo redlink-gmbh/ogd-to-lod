@@ -597,8 +597,8 @@ def _build_pr_description(state: GraphState, mapping_name: str) -> str:
     data = {
         "dataset_name": dataset_name,
         "dataset_description": dataset_description,
-        "csv_source": state.csv_source_url or (f"`{state.csv_path}`" if state.csv_path else ""),
-        "dcat_source": state.dcat_source_url or (f"`{state.dcat_path}`" if state.dcat_path else ""),
+        "csv_source": state.csv_source_url or (f"`{state.csv_path}`" if state.csv_path else "(not provided)"),
+        "dcat_source": state.dcat_source_url or (f"`{state.dcat_path}`" if state.dcat_path else "(not provided)"),
         "base_uri": f"`{state.base_uri}`" if state.base_uri else "",
         "mapping_structure": build_mapping_structure_section(
             state.mapping_proposal, state.mapping_decisions
