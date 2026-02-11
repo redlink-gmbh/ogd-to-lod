@@ -120,8 +120,8 @@ The PR description is generated from a Markdown template (`config/pr_template.md
 |-------------|-----|------|-------------|
 | `{{Dataset Name}}` | `dataset_name` | inline | DCAT title or mapping name |
 | `{{Dataset Description}}` | `dataset_description` | inline | DCAT description |
-| `{{CSV Source, preferrably a URL}}` | `csv_source` | inline | CSV file path |
-| `{{DCAT Source, preferrably a URL}}` | `dcat_source` | inline | DCAT file path |
+| `{{CSV Source}}` | `csv_source` | inline | Public CSV URL |
+| `{{DCAT Source}}` | `dcat_source` | inline | Public DCAT metadata URL |
 | `{{Base URI}}` | `base_uri` | inline | Base URI from config |
 | `{{contains reasoning behind mapping, decisions made and shows mapping}}` | `mapping_structure` | block | AI proposal (dimensions/measures) |
 | `{{show first 10 lines of CSV}}` | `csv_preview` | block | Parsed CSV sample rows |

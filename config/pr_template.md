@@ -3,8 +3,8 @@
 {{Dataset Description|Stündliche Messungen der [automatischen Wetterstation Basel-Binningen](https://www.meteoschweiz.admin.ch/home/messwerte.html?param=messnetz-automatisch&station=BAS).}}
 
 ### Source Information
-- **CSV Source:** {{CSV Source, preferrably a URL|`data/data.csv`}}
-- **DCAT Metadata:** {{DCAT Source, preferrably a URL|`data/dcat.ttl`}}
+- **CSV Source:** {{CSV Source}}
+- **DCAT Metadata:** {{DCAT Source}}
 - **Base URI:** {{Base URI}}
 
 ### Mapping Structure
