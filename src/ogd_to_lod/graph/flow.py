@@ -389,6 +389,16 @@ class MappingFlow:
         if self._state.current_state == FlowState.CONFIRM_NAME:
             return self._handle_name_confirmation(user_input)
 
+        # Handle source URL and DCAT inclusion states
+        if self._state.current_state == FlowState.ASK_CSV_URL:
+            return self._handle_csv_url(user_input)
+
+        if self._state.current_state == FlowState.ASK_DCAT_URL:
+            return self._handle_dcat_url(user_input)
+
+        if self._state.current_state == FlowState.ASK_DCAT_INCLUSION:
+            return self._handle_dcat_inclusion(user_input)
+
         # Handle PR confirmation if in PREVIEW state
         if self._state.current_state == FlowState.PREVIEW:
             return self._handle_pr_confirmation(user_input)
@@ -488,7 +498,7 @@ class MappingFlow:
         """Handle user confirmation of the mapping name.
 
         Empty input accepts the suggested name; non-empty input overrides it.
-        Then transitions to PREVIEW (builds and shows the PR description).
+        Then transitions to ASK_CSV_URL to collect source URLs.
 
         Args:
             user_input: User's response (empty = accept, non-empty = override).
@@ -505,8 +515,13 @@ class MappingFlow:
         else:
             logger.info("User accepted suggested name: %s", self._state.mapping_name)
 
-        # Build and show PR preview
-        self._state = preview_node(self._state, self._ai_service)
+        # Transition to ASK_CSV_URL
+        self._state.current_state = FlowState.ASK_CSV_URL
+        self._state.awaiting_user_input = True
+        self._state.add_message(
+            "assistant",
+            "Enter the public URL for the CSV source (or press Enter to skip):",
+        )
 
         return self._state
 
@@ -538,6 +553,99 @@ class MappingFlow:
             # Unrecognised input — prompt again
             self._state.awaiting_user_input = True
             logger.info("Unrecognised PR confirmation input, prompting again")
+
+        return self._state
+
+    def _handle_csv_url(self, user_input: str) -> GraphState:
+        """Handle CSV source URL input.
+
+        Empty input skips; non-empty stores the URL. Transitions to
+        ASK_DCAT_URL if a DCAT path was provided, otherwise to PREVIEW.
+
+        Args:
+            user_input: User's response.
+
+        Returns:
+            Updated state.
+        """
+        self._state.add_message("user", user_input)
+        url = user_input.strip()
+        if url:
+            self._state.csv_source_url = url
+            logger.info("User provided CSV source URL: %s", url)
+        else:
+            logger.info("User skipped CSV source URL")
+
+        # If DCAT was provided, ask for its URL too
+        if self._state.dcat_path:
+            self._state.current_state = FlowState.ASK_DCAT_URL
+            self._state.awaiting_user_input = True
+            self._state.add_message(
+                "assistant",
+                "Enter the public URL for the DCAT metadata (or press Enter to skip):",
+            )
+        else:
+            # No DCAT — go straight to preview
+            self._state = preview_node(self._state, self._ai_service)
+
+        return self._state
+
+    def _handle_dcat_url(self, user_input: str) -> GraphState:
+        """Handle DCAT source URL input.
+
+        Empty input skips; non-empty stores the URL. Always transitions to
+        ASK_DCAT_INCLUSION.
+
+        Args:
+            user_input: User's response.
+
+        Returns:
+            Updated state.
+        """
+        self._state.add_message("user", user_input)
+        url = user_input.strip()
+        if url:
+            self._state.dcat_source_url = url
+            logger.info("User provided DCAT source URL: %s", url)
+        else:
+            logger.info("User skipped DCAT source URL")
+
+        # Ask whether to include the DCAT file in the PR
+        self._state.current_state = FlowState.ASK_DCAT_INCLUSION
+        self._state.awaiting_user_input = True
+        self._state.add_message(
+            "assistant",
+            "Include the DCAT metadata file in the PR? (yes/no):",
+        )
+
+        return self._state
+
+    def _handle_dcat_inclusion(self, user_input: str) -> GraphState:
+        """Handle DCAT inclusion confirmation (yes/no).
+
+        Args:
+            user_input: User's response.
+
+        Returns:
+            Updated state.
+        """
+        self._state.add_message("user", user_input)
+        answer = user_input.lower().strip()
+
+        if answer in ("yes", "y"):
+            self._state.include_dcat_in_pr = True
+            logger.info("User chose to include DCAT metadata in PR")
+        elif answer in ("no", "n"):
+            self._state.include_dcat_in_pr = False
+            logger.info("User chose not to include DCAT metadata in PR")
+        else:
+            # Unrecognised — prompt again
+            self._state.awaiting_user_input = True
+            logger.info("Unrecognised DCAT inclusion input, prompting again")
+            return self._state
+
+        # Build and show PR preview
+        self._state = preview_node(self._state, self._ai_service)
 
         return self._state
 
@@ -602,6 +710,27 @@ class MappingFlow:
         """Check if flow is waiting for PR creation confirmation."""
         return (
             self._state.current_state == FlowState.PREVIEW
+            and self._state.awaiting_user_input
+        )
+
+    def is_awaiting_csv_url(self) -> bool:
+        """Check if flow is waiting for CSV source URL input."""
+        return (
+            self._state.current_state == FlowState.ASK_CSV_URL
+            and self._state.awaiting_user_input
+        )
+
+    def is_awaiting_dcat_url(self) -> bool:
+        """Check if flow is waiting for DCAT source URL input."""
+        return (
+            self._state.current_state == FlowState.ASK_DCAT_URL
+            and self._state.awaiting_user_input
+        )
+
+    def is_awaiting_dcat_inclusion(self) -> bool:
+        """Check if flow is waiting for DCAT inclusion confirmation."""
+        return (
+            self._state.current_state == FlowState.ASK_DCAT_INCLUSION
             and self._state.awaiting_user_input
         )
 

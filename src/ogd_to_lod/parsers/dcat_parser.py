@@ -466,6 +466,9 @@ def parse_dcat(source: str, format_hint: str | None = None) -> DCATMetadata:
     # Determine format
     fmt = format_hint or _detect_format(content, detected_format)
 
+    # Preserve original content before any context injection
+    raw_content = content
+
     # Map format hints to rdflib format names
     format_map = {
         "json-ld": "json-ld",
@@ -504,4 +507,26 @@ def parse_dcat(source: str, format_hint: str | None = None) -> DCATMetadata:
                 f"Failed to parse DCAT metadata from '{source}': {e}"
             ) from e
 
-    return _parse_graph(graph, source)
+    metadata = _parse_graph(graph, source)
+    metadata.raw_content = raw_content
+    metadata.source_format = fmt
+    return metadata
+
+
+def dcat_format_to_extension(source_format: str) -> str:
+    """Map a DCAT source format name to a file extension.
+
+    Args:
+        source_format: Format string such as "turtle", "json-ld", or "xml".
+
+    Returns:
+        Appropriate file extension including the leading dot.
+    """
+    ext_map = {
+        "turtle": ".ttl",
+        "ttl": ".ttl",
+        "json-ld": ".jsonld",
+        "xml": ".rdf",
+        "rdf-xml": ".rdf",
+    }
+    return ext_map.get(source_format, ".ttl")

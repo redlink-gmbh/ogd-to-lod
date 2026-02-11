@@ -135,7 +135,7 @@ class TestGitHubService:
         # Verify file was created
         mock_repo.create_file.assert_called_once()
         call_kwargs = mock_repo.create_file.call_args[1]
-        assert call_kwargs["path"] == "mappings/test-mapping.ttl"
+        assert call_kwargs["path"] == "mappings/test-mapping/mapping.ttl"
         assert call_kwargs["content"] == "@prefix rr: <...> ."
         assert call_kwargs["branch"] == "mapping/test-mapping"
 
@@ -299,3 +299,107 @@ class TestGitHubService:
         assert pr_kwargs["base"] == "develop"
 
         assert result.pr_number == 45
+
+    def test_subfolder_layout(self, github_config, mock_github):
+        """Test that file path uses subfolder layout: mappings/{name}/mapping.ttl."""
+        mock_repo = MagicMock()
+        mock_github.return_value.get_repo.return_value = mock_repo
+
+        mock_branch = MagicMock()
+        mock_branch.commit.sha = "abc123"
+        mock_repo.get_branch.return_value = mock_branch
+
+        mock_repo.get_git_ref.side_effect = GithubException(
+            status=404, data={"message": "Not Found"}, headers={},
+        )
+        mock_repo.get_contents.side_effect = GithubException(
+            status=404, data={"message": "Not Found"}, headers={},
+        )
+
+        mock_pr = MagicMock()
+        mock_pr.number = 50
+        mock_pr.html_url = "https://github.com/test-org/test-repo/pull/50"
+        mock_repo.create_pull.return_value = mock_pr
+
+        service = GitHubService(github_config)
+        service.create_mapping_pr(
+            mapping_name="my-dataset",
+            rml_content="@prefix rr: <...> .",
+            description="Test",
+        )
+
+        call_kwargs = mock_repo.create_file.call_args[1]
+        assert call_kwargs["path"] == "mappings/my-dataset/mapping.ttl"
+
+    def test_dcat_file_committed_alongside_rml(self, github_config, mock_github):
+        """Test that DCAT file is committed when content and filename provided."""
+        mock_repo = MagicMock()
+        mock_github.return_value.get_repo.return_value = mock_repo
+
+        mock_branch = MagicMock()
+        mock_branch.commit.sha = "abc123"
+        mock_repo.get_branch.return_value = mock_branch
+
+        mock_repo.get_git_ref.side_effect = GithubException(
+            status=404, data={"message": "Not Found"}, headers={},
+        )
+        mock_repo.get_contents.side_effect = GithubException(
+            status=404, data={"message": "Not Found"}, headers={},
+        )
+
+        mock_pr = MagicMock()
+        mock_pr.number = 51
+        mock_pr.html_url = "https://github.com/test-org/test-repo/pull/51"
+        mock_repo.create_pull.return_value = mock_pr
+
+        service = GitHubService(github_config)
+        service.create_mapping_pr(
+            mapping_name="with-dcat",
+            rml_content="@prefix rr: <...> .",
+            description="Test with DCAT",
+            dcat_content="@prefix dcat: <...> .",
+            dcat_filename="metadata.ttl",
+        )
+
+        # Should have two create_file calls: RML + DCAT
+        assert mock_repo.create_file.call_count == 2
+        calls = mock_repo.create_file.call_args_list
+
+        rml_path = calls[0][1]["path"]
+        dcat_path = calls[1][1]["path"]
+        assert rml_path == "mappings/with-dcat/mapping.ttl"
+        assert dcat_path == "mappings/with-dcat/metadata.ttl"
+        assert calls[1][1]["content"] == "@prefix dcat: <...> ."
+
+    def test_no_dcat_file_when_not_provided(self, github_config, mock_github):
+        """Test that only RML file is committed when no DCAT content provided."""
+        mock_repo = MagicMock()
+        mock_github.return_value.get_repo.return_value = mock_repo
+
+        mock_branch = MagicMock()
+        mock_branch.commit.sha = "abc123"
+        mock_repo.get_branch.return_value = mock_branch
+
+        mock_repo.get_git_ref.side_effect = GithubException(
+            status=404, data={"message": "Not Found"}, headers={},
+        )
+        mock_repo.get_contents.side_effect = GithubException(
+            status=404, data={"message": "Not Found"}, headers={},
+        )
+
+        mock_pr = MagicMock()
+        mock_pr.number = 52
+        mock_pr.html_url = "https://github.com/test-org/test-repo/pull/52"
+        mock_repo.create_pull.return_value = mock_pr
+
+        service = GitHubService(github_config)
+        service.create_mapping_pr(
+            mapping_name="no-dcat",
+            rml_content="@prefix rr: <...> .",
+            description="Test without DCAT",
+        )
+
+        # Should have exactly one create_file call (RML only)
+        assert mock_repo.create_file.call_count == 1
+        call_kwargs = mock_repo.create_file.call_args[1]
+        assert call_kwargs["path"] == "mappings/no-dcat/mapping.ttl"

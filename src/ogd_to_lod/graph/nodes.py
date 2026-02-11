@@ -17,7 +17,7 @@ from ogd_to_lod.github.pr_template import (
     render_pr_template,
 )
 from ogd_to_lod.logging import get_logger
-from ogd_to_lod.parsers import CSVParseError, DCATParseError, parse_csv, parse_dcat
+from ogd_to_lod.parsers import CSVParseError, DCATParseError, dcat_format_to_extension, parse_csv, parse_dcat
 from ogd_to_lod.rml import RMLGenerationError, RMLGenerator, replace_csv_source_with_placeholder
 from ogd_to_lod.validation import RMLValidator, ValidationResult
 
@@ -133,6 +133,8 @@ def analyze_node(state: GraphState, config: Config) -> GraphState:
                     else None
                 ),
             }
+            state.dcat_raw_content = dcat_data.raw_content
+            state.dcat_source_format = dcat_data.source_format
             logger.debug(f"Parsed DCAT: {dcat_data.title}")
         except DCATParseError as e:
             logger.warning(f"Failed to parse DCAT: {e}")
@@ -514,14 +516,27 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
 
     # Replace local CSV filename with {{FILE_URL}} placeholder
     csv_filename = state.csv_path.split("/")[-1].split("\\")[-1]
+    source_comment = (
+        f"Original source: {state.csv_source_url}"
+        if state.csv_source_url
+        else f"Original source: {state.csv_path}"
+    )
     rml_content = replace_csv_source_with_placeholder(
         state.generated_rml,
         csv_filename,
-        source_comment=f"Original source: {state.csv_path}",
+        source_comment=source_comment,
     )
 
     # Build PR description
     pr_description = _build_pr_description(state, mapping_name)
+
+    # Determine DCAT file for commit
+    dcat_content = None
+    dcat_filename = None
+    if state.include_dcat_in_pr and state.dcat_raw_content:
+        fmt = state.dcat_source_format or "turtle"
+        dcat_filename = f"metadata{dcat_format_to_extension(fmt)}"
+        dcat_content = state.dcat_raw_content
 
     # Create the PR
     try:
@@ -530,6 +545,8 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
             mapping_name=mapping_name,
             rml_content=rml_content,
             description=pr_description,
+            dcat_content=dcat_content,
+            dcat_filename=dcat_filename,
         )
 
         state.pr_url = result.pr_url
@@ -580,8 +597,8 @@ def _build_pr_description(state: GraphState, mapping_name: str) -> str:
     data = {
         "dataset_name": dataset_name,
         "dataset_description": dataset_description,
-        "csv_source": f"`{state.csv_path}`" if state.csv_path else "",
-        "dcat_source": f"`{state.dcat_path}`" if state.dcat_path else "",
+        "csv_source": state.csv_source_url or (f"`{state.csv_path}`" if state.csv_path else ""),
+        "dcat_source": state.dcat_source_url or (f"`{state.dcat_path}`" if state.dcat_path else ""),
         "base_uri": f"`{state.base_uri}`" if state.base_uri else "",
         "mapping_structure": build_mapping_structure_section(
             state.mapping_proposal, state.mapping_decisions

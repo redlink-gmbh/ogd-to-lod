@@ -105,6 +105,12 @@ def main() -> int:
         if flow.is_awaiting_name_confirmation():
             name = flow.state.mapping_name or "mapping"
             prompt = f"Dataset name ['{name}']: "
+        elif flow.is_awaiting_csv_url():
+            prompt = "Public CSV source URL (Enter to skip): "
+        elif flow.is_awaiting_dcat_url():
+            prompt = "Public DCAT metadata URL (Enter to skip): "
+        elif flow.is_awaiting_dcat_inclusion():
+            prompt = "Include DCAT metadata file in PR? (yes/no): "
         elif flow.is_awaiting_pr_confirmation():
             prompt = "Push to GitHub and create PR? (yes/no): "
         else:
@@ -120,8 +126,13 @@ def main() -> int:
             print("Exiting...")
             return 0
 
-        # Allow empty input for name confirmation (Enter = accept suggested name)
-        if not user_input and not flow.is_awaiting_name_confirmation():
+        # Allow empty input for name confirmation and URL states (Enter = skip)
+        allows_empty = (
+            flow.is_awaiting_name_confirmation()
+            or flow.is_awaiting_csv_url()
+            or flow.is_awaiting_dcat_url()
+        )
+        if not user_input and not allows_empty:
             continue
 
         try:

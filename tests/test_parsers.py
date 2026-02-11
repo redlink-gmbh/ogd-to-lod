@@ -12,6 +12,7 @@ from ogd_to_lod.parsers import (
     DCATMetadata,
     DCATParseError,
     ParsedInput,
+    dcat_format_to_extension,
     parse_csv,
     parse_dcat,
 )
@@ -614,3 +615,80 @@ class TestParsedInput:
         assert "Title: Summary Test" in summary
         assert "Publisher: Test Org" in summary
         assert "Keywords: test, summary" in summary
+
+
+class TestDCATRawContentAndFormat:
+    """Tests for raw_content and source_format fields on DCATMetadata."""
+
+    def test_turtle_raw_content_preserved(self, tmp_path: Path) -> None:
+        """Test that raw_content is stored for Turtle DCAT files."""
+        turtle_content = """@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+
+<https://example.org/dataset/1>
+    a dcat:Dataset ;
+    dct:title "Raw Content Test" .
+"""
+        turtle_file = tmp_path / "raw.ttl"
+        turtle_file.write_text(turtle_content)
+
+        result = parse_dcat(str(turtle_file))
+
+        assert result.raw_content == turtle_content
+        assert result.source_format == "turtle"
+
+    def test_json_ld_raw_content_is_pre_context_injection(self, tmp_path: Path) -> None:
+        """Test that raw_content is the original JSON-LD before context injection."""
+        original = json.dumps({
+            "@type": "dcat:Dataset",
+            "title": "JSON-LD Raw Test",
+        })
+        json_file = tmp_path / "raw.json"
+        json_file.write_text(original)
+
+        result = parse_dcat(str(json_file))
+
+        assert result.raw_content == original
+        assert result.source_format == "json-ld"
+        # The original should NOT have the default context
+        assert "http://www.w3.org/ns/dcat#" not in result.raw_content
+
+    def test_source_format_xml(self, tmp_path: Path) -> None:
+        """Test that source_format is set for XML DCAT files."""
+        xml_content = """<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:dcat="http://www.w3.org/ns/dcat#"
+         xmlns:dct="http://purl.org/dc/terms/">
+  <dcat:Dataset rdf:about="https://example.org/dataset/1">
+    <dct:title>XML Dataset</dct:title>
+  </dcat:Dataset>
+</rdf:RDF>"""
+        xml_file = tmp_path / "data.rdf"
+        xml_file.write_text(xml_content)
+
+        result = parse_dcat(str(xml_file))
+
+        assert result.source_format == "xml"
+        assert result.raw_content == xml_content
+
+
+class TestDCATFormatToExtension:
+    """Tests for dcat_format_to_extension utility."""
+
+    def test_turtle(self) -> None:
+        assert dcat_format_to_extension("turtle") == ".ttl"
+
+    def test_ttl(self) -> None:
+        assert dcat_format_to_extension("ttl") == ".ttl"
+
+    def test_json_ld(self) -> None:
+        assert dcat_format_to_extension("json-ld") == ".jsonld"
+
+    def test_xml(self) -> None:
+        assert dcat_format_to_extension("xml") == ".rdf"
+
+    def test_rdf_xml(self) -> None:
+        assert dcat_format_to_extension("rdf-xml") == ".rdf"
+
+    def test_unknown_defaults_to_ttl(self) -> None:
+        assert dcat_format_to_extension("unknown-format") == ".ttl"

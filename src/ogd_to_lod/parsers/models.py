@@ -86,6 +86,8 @@ class DCATMetadata:
     license: str | None = None
     access_rights: str | None = None
     contact_point: str | None = None
+    raw_content: str | None = None
+    source_format: str | None = None
 
     def __post_init__(self) -> None:
         """Ensure keywords is a list."""

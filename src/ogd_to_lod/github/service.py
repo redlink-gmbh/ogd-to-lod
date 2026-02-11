@@ -75,16 +75,21 @@ class GitHubService:
         rml_content: str,
         description: str,
         base_branch: str = "main",
+        dcat_content: str | None = None,
+        dcat_filename: str | None = None,
     ) -> PRResult:
         """Create a PR with a new RML mapping.
 
-        Creates a new branch, commits the RML file, and opens a pull request.
+        Creates a new branch, commits the RML file (and optionally a DCAT
+        metadata file), and opens a pull request.
 
         Args:
             mapping_name: Name for the mapping (used for branch and file names).
             rml_content: The RML Turtle content to commit.
             description: Human-readable description for the PR body.
             base_branch: Branch to create PR against (default: main).
+            dcat_content: Optional raw DCAT metadata content to commit.
+            dcat_filename: Filename for the DCAT file (e.g. "metadata.ttl").
 
         Returns:
             PRResult with PR number, URL, and branch name.
@@ -95,7 +100,7 @@ class GitHubService:
         # Sanitize mapping name for use in branch and file names
         safe_name = self._sanitize_name(mapping_name)
         branch_name = f"mapping/{safe_name}"
-        file_path = f"{self.MAPPINGS_FOLDER}/{safe_name}.ttl"
+        file_path = f"{self.MAPPINGS_FOLDER}/{safe_name}/mapping.ttl"
 
         logger.info(f"Creating PR for mapping: {mapping_name}")
         logger.debug(f"Branch: {branch_name}, File: {file_path}")
@@ -112,6 +117,13 @@ class GitHubService:
             # Commit the RML file
             commit_message = f"Add RML mapping: {mapping_name}"
             self._commit_file(branch_name, file_path, rml_content, commit_message)
+
+            # Commit DCAT metadata file if provided
+            if dcat_content and dcat_filename:
+                dcat_path = f"{self.MAPPINGS_FOLDER}/{safe_name}/{dcat_filename}"
+                dcat_commit_message = f"Add DCAT metadata: {mapping_name}"
+                self._commit_file(branch_name, dcat_path, dcat_content, dcat_commit_message)
+                logger.debug(f"Committed DCAT file: {dcat_path}")
 
             # Create the PR
             pr = self._create_pr(
