@@ -1163,18 +1163,15 @@ class TestPrDescriptionUsesUrls:
         assert "https://example.com/dcat.ttl" in result
         assert "`/data/dcat.ttl`" not in result
 
-    def test_falls_back_to_local_paths(self):
+    def test_not_provided_when_no_url(self):
         state = GraphState(
             csv_path="/data/file.csv",
             dcat_path="/data/dcat.ttl",
         )
         result = _build_pr_description(state, "test-mapping")
-        assert "`/data/file.csv`" in result
-        assert "`/data/dcat.ttl`" in result
-
-    def test_not_provided_when_no_source(self):
-        state = GraphState()
-        result = _build_pr_description(state, "test-mapping")
+        # Local paths should NOT appear — only public URLs are shown
+        assert "`/data/file.csv`" not in result
+        assert "`/data/dcat.ttl`" not in result
         assert "(not provided)" in result
 
 
