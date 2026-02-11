@@ -151,24 +151,30 @@ class GitHubService:
     def _create_branch(self, branch_name: str, base_sha: str) -> None:
         """Create a new branch from a base commit.
 
+        Uses an EAFP pattern: tries to create the ref first, and if it
+        already exists (422), falls back to updating the existing ref.
+
         Args:
             branch_name: Name for the new branch.
             base_sha: SHA of the commit to branch from.
 
         Raises:
-            GithubException: If branch creation fails.
+            GithubException: If branch creation fails for a reason other
+                than the branch already existing.
         """
         ref_name = f"refs/heads/{branch_name}"
 
-        # Check if branch already exists
         try:
-            existing = self.repo.get_git_ref(f"heads/{branch_name}")
-            logger.warning(f"Branch {branch_name} already exists, updating to new base")
-            existing.edit(sha=base_sha)
-        except GithubException:
-            # Branch doesn't exist, create it
             self.repo.create_git_ref(ref=ref_name, sha=base_sha)
             logger.debug(f"Created branch: {branch_name}")
+        except GithubException as e:
+            if e.status == 422:
+                # Branch already exists — update it to the new base
+                existing = self.repo.get_git_ref(f"heads/{branch_name}")
+                existing.edit(sha=base_sha, force=True)
+                logger.warning(f"Branch {branch_name} already existed, reset to {base_sha[:8]}")
+            else:
+                raise
 
     def _commit_file(
         self,
@@ -217,7 +223,7 @@ class GitHubService:
         head: str,
         base: str,
     ) -> Any:
-        """Create a pull request.
+        """Create a pull request, or update the existing one if already open.
 
         Args:
             title: PR title.
@@ -226,18 +232,43 @@ class GitHubService:
             base: Base branch name.
 
         Returns:
-            The created PullRequest object.
+            The created or updated PullRequest object.
 
         Raises:
-            GithubException: If PR creation fails.
+            GithubException: If PR creation/update fails.
         """
-        pr = self.repo.create_pull(
-            title=title,
-            body=body,
-            head=head,
-            base=base,
-        )
-        return pr
+        try:
+            pr = self.repo.create_pull(
+                title=title,
+                body=body,
+                head=head,
+                base=base,
+            )
+            return pr
+        except GithubException as e:
+            if e.status == 422:
+                # PR likely already exists — find and update it
+                pr = self._find_existing_pr(head, base)
+                if pr is not None:
+                    pr.edit(title=title, body=body)
+                    logger.warning(f"Updated existing PR #{pr.number} for branch {head}")
+                    return pr
+            raise
+
+    def _find_existing_pr(self, head: str, base: str) -> Any | None:
+        """Find an open PR from head to base.
+
+        Args:
+            head: Head branch name.
+            base: Base branch name.
+
+        Returns:
+            The PullRequest object if found, None otherwise.
+        """
+        pulls = self.repo.get_pulls(state="open", head=f"{self.repo.owner.login}:{head}", base=base)
+        for pr in pulls:
+            return pr
+        return None
 
     def _sanitize_name(self, name: str) -> str:
         """Sanitize a name for use in branch and file names.
