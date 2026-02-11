@@ -123,9 +123,9 @@ The PR description is generated from a Markdown template (`config/pr_template.md
 | `{{CSV Source}}` | `csv_source` | inline | Public CSV URL |
 | `{{DCAT Source}}` | `dcat_source` | inline | Public DCAT metadata URL |
 | `{{Base URI}}` | `base_uri` | inline | Base URI from config |
-| `{{contains reasoning behind mapping, decisions made and shows mapping}}` | `mapping_structure` | block | AI proposal (dimensions/measures) |
-| `{{show first 10 lines of CSV}}` | `csv_preview` | block | Parsed CSV sample rows |
-| `{{shows a meaningful amount of lines of generated RDF}}` | `rdf_preview` | block | RMLMapper output |
+| `{{Mapping Decisions}}` | `mapping_structure` | block | AI proposal (dimensions/measures) |
+| `{{CSV Sample}}` | `csv_preview` | block | Parsed CSV sample rows |
+| `{{RDF Sample}}` | `rdf_preview` | block | RMLMapper output |
 
 **Inline** placeholders replace only the `{{…}}` token. **Block** placeholders replace the token and all example content below it (up to the next `###` or `---` boundary).
 

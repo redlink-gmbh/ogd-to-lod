@@ -73,7 +73,7 @@ class TestRenderPrTemplate:
     def test_block_replacement_removes_example_content(self):
         template = (
             "### Mapping Structure\n\n"
-            "{{contains reasoning behind mapping, decisions made and shows mapping}}\n\n"
+            "{{Mapping Decisions}}\n\n"
             "**Example dimension line**\n"
             "**Example measure line**\n\n"
             "### Next Section\n"
@@ -89,7 +89,7 @@ class TestRenderPrTemplate:
     def test_block_without_data_keeps_example_content(self):
         template = (
             "### Mapping Structure\n\n"
-            "{{contains reasoning behind mapping, decisions made and shows mapping}}\n\n"
+            "{{Mapping Decisions}}\n\n"
             "**Example line**\n\n"
             "### Next Section\n"
         )

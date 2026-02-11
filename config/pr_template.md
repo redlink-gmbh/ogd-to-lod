@@ -9,7 +9,7 @@
 
 ### Mapping Structure
 
-{{contains reasoning behind mapping, decisions made and shows mapping}}
+{{Mapping Decisions}}
 
 **Dimensions:**
 - `Awhat i` (temporal) - granularity: hour - hierarchy: date_time_hierarchy
@@ -31,11 +31,11 @@
 
 ### CSV Preview
 
-{{show first 10 lines of CSV}}
+{{CSV Sample}}
 
 ### RDF Preview
 
-{{shows a meaningful amount of lines of generated RDF}}
+{{RDF Sample}}
 ```turtle
 @prefix csvw: <http://www.w3.org/ns/csvw#> .
 @prefix cube: <https://cube.link/> .
