@@ -16,6 +16,8 @@ from pathlib import Path
 
 from ogd_to_lod.logging import get_logger
 
+# Import the CSV source placeholder constant
+CSV_SOURCE_PLACEHOLDER = "{{CSV_SOURCE}}"
 
 logger = get_logger(__name__)
 
@@ -115,19 +117,20 @@ class RMLValidator:
         self,
         rml_content: str,
         csv_path: str,
-        sample_rows: int = 5,
+        sample_rows: int = 3,
         output_format: str = "turtle",
         timeout: int | None = None,
     ) -> ValidationResult:
         """Validate RML by executing it against sample CSV data (Tier 2).
 
         Extracts the first N rows from the CSV, writes them to a temp directory
-        with the filename the RML expects, then runs RMLMapper.
+        with a sample filename, then runs RMLMapper. If the RML contains the
+        {{CSV_SOURCE}} placeholder, it will be replaced with the sample filename.
 
         Args:
-            rml_content: RML mapping in Turtle format.
+            rml_content: RML mapping in Turtle format (may contain {{CSV_SOURCE}} placeholder).
             csv_path: Path to the source CSV file.
-            sample_rows: Number of data rows to include in sample (default: 5).
+            sample_rows: Number of data rows to include in sample (default: 3).
             output_format: Output format for RDF (turtle, nquads, jsonld).
             timeout: Timeout in seconds (default: 60).
 
@@ -169,13 +172,16 @@ class RMLValidator:
             )
 
         # Extract sample CSV and run RMLMapper in temp directory
-        tmpdir = self._extract_sample_csv(rml_content, csv_path, sample_rows)
+        # Use a simple sample filename for the CSV
+        sample_filename = "sample.csv"
+        tmpdir = self._extract_sample_csv(csv_path, sample_filename, sample_rows)
         try:
-            source_filename = self._get_rml_source_filename(rml_content, csv_path)
             rml_file = Path(tmpdir.name) / "mapping.ttl"
             output_file = Path(tmpdir.name) / "output.ttl"
 
-            rml_file.write_text(self._ensure_base_directive(rml_content))
+            # Replace the CSV source placeholder with the sample filename
+            rml_with_source = self._replace_csv_placeholder(rml_content, sample_filename)
+            rml_file.write_text(self._ensure_base_directive(rml_with_source))
 
             try:
                 if self._use_docker:
@@ -261,30 +267,29 @@ class RMLValidator:
 
     def _extract_sample_csv(
         self,
-        rml_content: str,
         csv_path: str,
-        sample_rows: int = 5,
+        sample_filename: str,
+        sample_rows: int = 3,
     ) -> tempfile.TemporaryDirectory:
         """Extract header + first N rows from a CSV for validation.
 
-        The sample file is written into a temp directory using the filename
-        that the RML mapping expects (parsed from rml:source).
+        The sample file is written into a temp directory using the specified
+        sample filename.
 
         Args:
-            rml_content: RML content to parse source filename from.
             csv_path: Path to the full CSV file.
+            sample_filename: Filename to use for the sample CSV.
             sample_rows: Number of data rows to include.
 
         Returns:
             TemporaryDirectory containing the sample CSV. Caller must manage
             its lifecycle (cleanup).
         """
-        source_filename = self._get_rml_source_filename(rml_content, csv_path)
         tmpdir = tempfile.TemporaryDirectory()
 
         try:
             source_path = Path(csv_path)
-            dest_path = Path(tmpdir.name) / source_filename
+            dest_path = Path(tmpdir.name) / sample_filename
 
             # Detect delimiter by reading the first line
             with open(source_path, "r", newline="", encoding="utf-8") as f:
@@ -321,6 +326,26 @@ class RMLValidator:
             raise
 
         return tmpdir
+
+    @staticmethod
+    def _replace_csv_placeholder(rml_content: str, csv_filename: str) -> str:
+        """Replace CSV source placeholder with actual filename.
+
+        Replaces all occurrences of {{CSV_SOURCE}} with the provided filename.
+        If the placeholder is not found, the RML is returned unchanged (for
+        backward compatibility with mappings that have hardcoded paths).
+
+        Args:
+            rml_content: RML content possibly containing {{CSV_SOURCE}} placeholder.
+            csv_filename: The actual CSV filename to substitute.
+
+        Returns:
+            RML content with placeholder replaced.
+        """
+        if CSV_SOURCE_PLACEHOLDER in rml_content:
+            logger.debug(f"Replacing {CSV_SOURCE_PLACEHOLDER} with {csv_filename}")
+            return rml_content.replace(CSV_SOURCE_PLACEHOLDER, csv_filename)
+        return rml_content
 
     @staticmethod
     def _ensure_base_directive(rml_content: str) -> str:

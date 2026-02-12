@@ -11,6 +11,8 @@ azure:
   api_key: "${AZURE_OPENAI_KEY}"
   deployment: "${AZURE_OPENAI_DEPLOYMENT}"
   api_version: "2024-02-15-preview"
+  # Maximum AI requests before asking user to continue (prevents runaway costs)
+  max_requests: 50
 
 sparql:
   # Optional: SPARQL endpoint for querying existing dimensions (V1)

@@ -18,11 +18,10 @@ Always use the following standard prefixes:
 - @prefix cube: <https://cube.link/> .
 - @prefix ex: <{base_uri}> .
 
-Define additional sub-prefixes for each sub-path of the base URI that you need. \
-For example, if the mapping uses dimensions, measures, and observations:
-- @prefix ex-dim: <{base_uri}dimension/> .
-- @prefix ex-measure: <{base_uri}measure/> .
-- @prefix ex-obs: <{base_uri}observation/> .
+Define additional sub-prefixes for each sub-path of the base URI that you need:
+- @prefix ex-property: <{base_uri}property/> .  (for all dimension and measure properties)
+- @prefix ex-code: <{base_uri}code/> .  (for keyDimension instances/values)
+- @prefix ex-obs: <{base_uri}observation/> .  (for observations)
 
 ## CRITICAL: Turtle Syntax Rules
 
@@ -49,7 +48,11 @@ RMLMapper uses RDF4J which rejects relative IRIs without a @base directive. \
 Instead, use prefixed names like `ex:LogicalSource` or `ex:TriplesMap`.
 
 ## CSV Source Configuration
-The CSV source file path is: {csv_path}
+The CSV source should use the placeholder: {csv_path}
+
+IMPORTANT: Always use the placeholder `{csv_path}` for the CSV file path. \
+This placeholder will be replaced with the actual CSV file path at deployment time, \
+making the RML mapping portable and reusable.
 
 ## CSV Delimiter
 The detected CSV delimiter is: {csv_delimiter}
@@ -81,11 +84,48 @@ rml:logicalSource [
 Only include the csvw prefix declaration (`@prefix csvw: ...`) when the delimiter \
 is not a comma.
 
+Remember: Always use `{csv_path}` exactly as shown - this is a placeholder that will be \
+replaced with the actual file path during deployment.
+
 ## Approved Mapping Proposal
 {mapping_proposal}
 
 ## CSV Schema
 {csv_schema}
+
+## RDF Data Cube Structure (CRITICAL)
+
+Each CSV row represents ONE cube:Observation. Each CSV column is either:
+- A **key dimension** (dimension property with resource values), OR
+- A **measure** (measure property with literal values)
+
+### URI Conventions (MUST FOLLOW)
+
+**Properties** (dimensions and measures):
+- All properties use the prefix: `ex-property:` ({base_uri}property/)
+- **Time dimensions**: ALWAYS use `ex-property:ZEIT` (never use other names like "year", "date", "time")
+- **Spatial dimensions**: ALWAYS use `ex-property:RAUM` (never use other names like "region", "location", "place")
+- Other dimensions/measures: `ex-property:{{name}}` (e.g., `ex-property:category`, `ex-property:population`)
+
+**Code values** (keyDimension instances):
+- All keyDimension values use the prefix: `ex-code:` ({base_uri}code/)
+- Construct from CSV column values: `ex-code:{{column_value}}`
+- Example: If CSV has region code "ZH", dimension value is `ex-code:ZH`
+
+### Key Dimensions vs Measures
+- **Key dimensions** identify what the observation is about (e.g., region, time period, category)
+  - Property: Use `ex-property:` prefix (e.g., `ex-property:RAUM`, `ex-property:category`)
+  - Values MUST be resources (URIs), not literals
+  - Use `rr:termType rr:IRI` in the object map
+  - Construct URIs using `ex-code:` prefix: `ex-code:{{column_value}}`
+  - Example: `ex-property:RAUM` → `ex-code:ZH` (resource)
+
+- **Measures** are the actual data values being observed (e.g., population count, temperature)
+  - Property: Use `ex-property:` prefix (e.g., `ex-property:population`)
+  - Values are literals with appropriate datatypes
+  - Use `rr:datatype xsd:decimal`, `xsd:integer`, `xsd:date`, etc.
+  - Use `rr:termType rr:Literal` (default)
+  - Example: `ex-property:population` → `"12345"^^xsd:integer` (literal)
 
 ## RML Structure Requirements
 
@@ -93,27 +133,83 @@ is not a comma.
 section above. Both `rml:source` and `rml:referenceFormulation ql:CSV` must be \
 properties of the `rml:logicalSource` blank node.
 
-2. **TriplesMap**: Create a main TriplesMap that:
-   - Uses a subject template combining dimension values for unique observation URIs
-   - Example: https://ld.stadt-zuerich.ch/statistics/observation/{{year}}/{{region}}
+2. **TriplesMap for Observations**: Create ONE main TriplesMap where:
+   - Each CSV row becomes one cube:Observation
+   - Subject URI combines key dimension values for uniqueness
+   - Example template: `ex-obs:{{year}}-{{region}}-{{category}}`
+   - Type: `rr:class cube:Observation`
 
-3. **Dimension Mappings**: For each dimension in the proposal:
-   - Use cube:dimension predicate
-   - For temporal dimensions: map to xsd:gYear, xsd:date, or xsd:dateTime based on granularity
-   - For spatial dimensions: create DefinedTerm references
-   - For categorical dimensions: create DefinedTerm references with schema:inDefinedTermSet
+3. **Key Dimension Mappings**: For each key dimension column:
+   - Property: Use `ex-property:` prefix
+     - Time dimensions → `ex-property:ZEIT`
+     - Spatial dimensions → `ex-property:RAUM`
+     - Other dimensions → `ex-property:{{dimension_name}}`
+   - Object MUST be a resource (URI) using `ex-code:` prefix
+   - Use `rr:template` to build URIs from CSV column values
+   - ALWAYS include `rr:termType rr:IRI` in the object map
+   - Example (spatial dimension):
+     ```
+     rr:predicateObjectMap [
+         rr:predicate ex-property:RAUM;
+         rr:objectMap [
+             rr:template "{{{{base_uri}}}}code/{{{{region_column}}}}";
+             rr:termType rr:IRI
+         ]
+     ];
+     ```
+   - Example (time dimension):
+     ```
+     rr:predicateObjectMap [
+         rr:predicate ex-property:ZEIT;
+         rr:objectMap [
+             rr:template "{{{{base_uri}}}}code/{{{{year_column}}}}";
+             rr:termType rr:IRI
+         ]
+     ];
+     ```
 
-4. **Measure Mappings**: For each measure in the proposal:
-   - Use cube:measure predicate
-   - Apply appropriate XSD datatype (xsd:decimal for floats, xsd:integer for integers)
-   - Include unit annotations where specified
+4. **Measure Mappings**: For each measure column:
+   - Property: Use `ex-property:` prefix (e.g., `ex-property:population`)
+   - Object is a literal with appropriate datatype
+   - Use `rr:datatype` for numeric or temporal values
+   - Example:
+     ```
+     rr:predicateObjectMap [
+         rr:predicate ex-property:population;
+         rr:objectMap [
+             rml:reference "population_column";
+             rr:datatype xsd:integer
+         ]
+     ];
+     ```
 
-5. **Observation Type**: Each observation should be typed as:
-   - rr:class cube:Observation
+5. **Datatype Selection**:
+   - Integers: `xsd:integer`
+   - Decimals/floats: `xsd:decimal`
+   - Dates: `xsd:date` (YYYY-MM-DD)
+   - Years: `xsd:gYear` (YYYY)
+   - Date-times: `xsd:dateTime`
+   - Text: `xsd:string` (or omit for plain literals)
 
-6. **DefinedTermSet Generation**: For categorical and spatial dimensions:
-   - Generate schema:DefinedTermSet resources
-   - Link dimension values using schema:DefinedTerm and schema:inDefinedTermSet
+6. **Generate Code Value Resources (REQUIRED)**: For each key dimension, create \
+a separate TriplesMap to generate the code value resources (dimension instances):
+   - Subject: Use `ex-code:{{column_value}}` template
+   - Type: `rr:class schema:DefinedTerm`
+   - Add labels: Use `schema:name` or `rdfs:label` for human-readable labels
+   - Example TriplesMap for region codes:
+     ```
+     ex:RegionCodeMap a rr:TriplesMap;
+         rml:logicalSource [ ... same as observation map ... ];
+         rr:subjectMap [
+             rr:template "{{{{base_uri}}}}code/{{{{region_column}}}}";
+             rr:class schema:DefinedTerm
+         ];
+         rr:predicateObjectMap [
+             rr:predicate schema:name;
+             rr:objectMap [ rml:reference "region_column" ]
+         ].
+     ```
+   - This ensures all code values are properly typed as schema:DefinedTerm.
 
 ## Output Format
 Provide ONLY the RML Turtle code in a fenced code block with language 'turtle'.

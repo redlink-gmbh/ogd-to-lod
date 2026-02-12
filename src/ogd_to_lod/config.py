@@ -25,6 +25,7 @@ class AzureOpenAIConfig:
     api_key: str
     deployment: str
     api_version: str = "2024-02-15-preview"
+    max_requests: int = 50  # Maximum AI requests before asking user to continue
 
 
 @dataclass
@@ -171,6 +172,7 @@ def load_config(config_path: str | Path) -> Config:
             api_key=azure_data.get("api_key", ""),
             deployment=azure_data.get("deployment", ""),
             api_version=azure_data.get("api_version", "2024-02-15-preview"),
+            max_requests=azure_data.get("max_requests", 50),
         )
         if not azure.endpoint:
             raise ValueError("azure.endpoint is required")

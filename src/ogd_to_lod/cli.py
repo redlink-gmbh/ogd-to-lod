@@ -3,6 +3,7 @@
 import argparse
 import sys
 
+from ogd_to_lod.ai import RequestLimitReached
 from ogd_to_lod.config import load_config
 from ogd_to_lod.graph import FlowState, MappingFlow
 from ogd_to_lod.logging import get_logger
@@ -137,6 +138,27 @@ def main() -> int:
 
         try:
             state = flow.continue_with_input(user_input)
+        except RequestLimitReached as e:
+            # AI request limit reached - ask user if they want to continue
+            print(f"\n⚠ Warning: {e}", file=sys.stderr)
+            print(f"\nYou have made {e.current_count} AI requests (limit: {e.limit}).")
+            print("This limit helps prevent runaway costs from too many API calls.")
+
+            response = input("\nContinue with more requests? (yes/no): ").strip().lower()
+            if response in ('yes', 'y'):
+                # Reset counter and retry
+                flow.reset_request_count()
+                print(f"✓ Request counter reset. Continuing...")
+                # Retry the same input
+                try:
+                    state = flow.continue_with_input(user_input)
+                except Exception as retry_error:
+                    logger.exception("Error processing input after reset")
+                    print(f"\nError: {retry_error}", file=sys.stderr)
+                    continue
+            else:
+                print("\nExiting at user request.")
+                return 0
         except Exception as e:
             logger.exception("Error processing input")
             print(f"\nError: {e}", file=sys.stderr)

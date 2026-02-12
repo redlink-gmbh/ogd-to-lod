@@ -226,6 +226,20 @@ Important: Use exactly the keys shown above (dimensions, measures, column, type,
             "Could not parse mapping proposal from AI response. "
             "User may need to provide explicit structure."
         )
+        # Still present what the AI said, even if we couldn't parse it
+        state.add_message(
+            "assistant",
+            f"I couldn't generate a structured proposal. Here's my analysis:\n\n{state.proposal_text}\n\n"
+            "Could you help me understand which columns should be dimensions and which should be measures?"
+        )
+    else:
+        # Present the proposal in human-readable format
+        proposal_summary = _format_proposal_summary(state.mapping_proposal)
+        state.add_message(
+            "assistant",
+            f"{proposal_summary}\n\nDoes this mapping structure look correct? "
+            "(You can approve, suggest changes, or ask questions)"
+        )
 
     # Wait for user confirmation
     state.awaiting_user_input = True
@@ -571,6 +585,81 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
     return state
 
 
+def _format_proposal_summary(proposal: MappingProposal) -> str:
+    """Format a mapping proposal into a human-readable summary.
+
+    Args:
+        proposal: The mapping proposal to format.
+
+    Returns:
+        Formatted markdown summary of the proposal.
+    """
+    lines = ["## Proposed RDF Data Cube Mapping", ""]
+
+    if proposal.dimensions:
+        lines.append("### Dimensions (Key Dimensions)")
+        lines.append("These columns will be mapped to properties with resource (URI) values:")
+        lines.append("")
+        for dim in proposal.dimensions:
+            # Build dimension description
+            dim_desc = f"- **`{dim.column}`** → "
+
+            # Add property name
+            if dim.dimension_type == "temporal":
+                dim_desc += "`ex-property:ZEIT`"
+            elif dim.dimension_type == "spatial":
+                dim_desc += "`ex-property:RAUM`"
+            else:
+                dim_desc += f"`ex-property:{dim.column}`"
+
+            # Add dimension type
+            dim_desc += f" ({dim.dimension_type})"
+
+            # Add additional details
+            details = []
+            if dim.granularity:
+                details.append(f"granularity: {dim.granularity}")
+            if dim.hierarchy:
+                details.append(f"hierarchy: {dim.hierarchy}")
+
+            if details:
+                dim_desc += f" — {', '.join(details)}"
+
+            # Add note about resource values
+            dim_desc += f"\n  - Values: `ex-code:{{{{value}}}}` (resources of type `schema:DefinedTerm`)"
+
+            lines.append(dim_desc)
+        lines.append("")
+
+    if proposal.measures:
+        lines.append("### Measures")
+        lines.append("These columns will be mapped to properties with literal values:")
+        lines.append("")
+        for measure in proposal.measures:
+            measure_desc = f"- **`{measure.column}`** → `ex-property:{measure.column}`"
+
+            # Add additional details
+            details = []
+            if measure.unit:
+                details.append(f"unit: {measure.unit}")
+            if measure.aggregation:
+                details.append(f"aggregation: {measure.aggregation}")
+
+            if details:
+                measure_desc += f" — {', '.join(details)}"
+
+            lines.append(measure_desc)
+        lines.append("")
+
+    # Add explanation
+    lines.extend([
+        "---",
+        "**Note:** Each CSV row will become one `cube:Observation` resource.",
+    ])
+
+    return "\n".join(lines)
+
+
 def _build_pr_description(state: GraphState, mapping_name: str) -> str:
     """Build a human-readable PR description using the external template.
 
@@ -883,14 +972,10 @@ def validate_node(
 
         # Add success message
         if result.rdf_output:
-            preview_sample = result.rdf_output[:1000]
-            if len(result.rdf_output) > 1000:
-                preview_sample += "\n... (truncated)"
-
             state.add_message(
                 "assistant",
                 f"RML validation successful! Here's a preview of the generated RDF:\n\n"
-                f"```turtle\n{preview_sample}\n```",
+                f"```turtle\n{result.rdf_output}\n```",
             )
         else:
             # RMLMapper was skipped (not configured)

@@ -749,3 +749,11 @@ class MappingFlow:
     def get_pr_number(self) -> int | None:
         """Get the number of the created PR."""
         return self._state.pr_number
+
+    def reset_request_count(self) -> None:
+        """Reset the AI service request counter to zero.
+
+        This allows continuing with more requests after reaching the limit.
+        """
+        self._ai_service.reset_request_count()
+        logger.info("AI service request counter reset")

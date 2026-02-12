@@ -10,6 +10,10 @@ from ogd_to_lod.rml.prompts import RML_CORRECTION_PROMPT, RML_GENERATION_PROMPT
 
 logger = get_logger(__name__)
 
+# Placeholder for CSV source path in generated RML
+# This should be replaced with the actual CSV path at deployment time
+CSV_SOURCE_PLACEHOLDER = "{{CSV_SOURCE}}"
+
 
 class RMLGenerationError(Exception):
     """Error during RML generation."""
@@ -59,12 +63,12 @@ class RMLGenerator:
         proposal_text = self._format_proposal(mapping_proposal)
         schema_text = self._format_schema(csv_schema)
 
-        # Build the prompt — use only the CSV basename so that the generated
-        # rml:source value is a plain filename (validation runs in a temp dir).
+        # Build the prompt — use a placeholder for the CSV path so that the
+        # generated RML is portable and can be deployed with different CSV sources.
         csv_delimiter = csv_schema.get("delimiter", ",")
         prompt = RML_GENERATION_PROMPT.format(
             base_uri=base_uri,
-            csv_path=Path(csv_path).name,
+            csv_path=CSV_SOURCE_PLACEHOLDER,
             mapping_proposal=proposal_text,
             csv_schema=schema_text,
             csv_delimiter=csv_delimiter,

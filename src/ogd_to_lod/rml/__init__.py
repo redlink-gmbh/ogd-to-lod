@@ -1,6 +1,7 @@
 """RML generation module for creating RDF Mapping Language configurations."""
 
 from ogd_to_lod.rml.generator import (
+    CSV_SOURCE_PLACEHOLDER,
     RMLGenerationError,
     RMLGenerator,
     generate_rml,
@@ -15,4 +16,5 @@ __all__ = [
     "replace_csv_source_with_placeholder",
     "RML_CORRECTION_PROMPT",
     "RML_GENERATION_PROMPT",
+    "CSV_SOURCE_PLACEHOLDER",
 ]

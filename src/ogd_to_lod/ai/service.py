@@ -79,6 +79,24 @@ class RateLimitExceeded(AIServiceError):
     pass
 
 
+class RequestLimitReached(AIServiceError):
+    """Request limit reached - user confirmation needed to continue."""
+
+    def __init__(self, current_count: int, limit: int):
+        """Initialize with request counts.
+
+        Args:
+            current_count: Current number of requests made.
+            limit: Configured request limit.
+        """
+        self.current_count = current_count
+        self.limit = limit
+        super().__init__(
+            f"Request limit reached: {current_count}/{limit} requests made. "
+            "User confirmation required to continue."
+        )
+
+
 class ConnectionFailed(AIServiceError):
     """Connection to API failed."""
 
@@ -118,6 +136,8 @@ class AIService:
         self._max_retries = max_retries
         self._retry_delay = retry_delay
         self._conversation_history: list[Message] = []
+        self._request_count = 0  # Track number of requests made
+        self._request_limit = config.max_requests  # Maximum requests before asking user
 
         # Initialize the LangChain Azure OpenAI client
         self._client = AzureChatOpenAI(
@@ -177,6 +197,20 @@ class AIService:
         """Clear the conversation history."""
         self._conversation_history.clear()
 
+    @property
+    def request_count(self) -> int:
+        """Get the current request count."""
+        return self._request_count
+
+    @property
+    def request_limit(self) -> int:
+        """Get the configured request limit."""
+        return self._request_limit
+
+    def reset_request_count(self) -> None:
+        """Reset the request counter to zero."""
+        self._request_count = 0
+
     def add_context(self, context: str) -> None:
         """Add context to the conversation as a system message.
 
@@ -224,10 +258,15 @@ class AIService:
             AI response content.
 
         Raises:
+            RequestLimitReached: If request limit is reached.
             RateLimitExceeded: If rate limit is exceeded after all retries.
             ConnectionFailed: If connection to API fails.
             AIServiceError: For other API errors.
         """
+        # Check if request limit reached
+        if self._request_count >= self._request_limit:
+            raise RequestLimitReached(self._request_count, self._request_limit)
+
         messages = self._build_messages(message)
 
         # Add user message to history
@@ -239,6 +278,9 @@ class AIService:
             try:
                 response = self._client.invoke(messages)
                 response_content = str(response.content)
+
+                # Increment request counter on successful request
+                self._request_count += 1
 
                 # Add assistant response to history
                 self._conversation_history.append(

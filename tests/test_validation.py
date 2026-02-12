@@ -571,7 +571,7 @@ ex:Map rr:subjectMap [ ] .
     def test_sample_csv_row_count(self, data_csv, sample_rml):
         """Test that sample CSV has the correct number of rows."""
         validator = RMLValidator()
-        tmpdir = validator._extract_sample_csv(sample_rml, data_csv, sample_rows=3)
+        tmpdir = validator._extract_sample_csv(data_csv, "data.csv", sample_rows=3)
 
         try:
             sample_path = Path(tmpdir.name) / "data.csv"
@@ -588,9 +588,9 @@ ex:Map rr:subjectMap [ ] .
             tmpdir.cleanup()
 
     def test_sample_csv_default_rows(self, data_csv, sample_rml):
-        """Test default sample size (5 rows)."""
+        """Test default sample size (3 rows)."""
         validator = RMLValidator()
-        tmpdir = validator._extract_sample_csv(sample_rml, data_csv)
+        tmpdir = validator._extract_sample_csv(data_csv, "data.csv")
 
         try:
             sample_path = Path(tmpdir.name) / "data.csv"
@@ -598,19 +598,16 @@ ex:Map rr:subjectMap [ ] .
                 reader = csv.reader(f)
                 rows = list(reader)
 
-            # Header + 5 data rows = 6
-            assert len(rows) == 6
+            # Header + 3 data rows = 4 (default changed from 5 to 3)
+            assert len(rows) == 4
         finally:
             tmpdir.cleanup()
 
     def test_semicolon_delimiter(self, semicolon_csv, sample_rml):
         """Test that semicolon delimiters are preserved."""
-        # Override the source filename to match
-        rml_custom = sample_rml.replace('rml:source "data.csv"', 'rml:source "test.csv"')
-
         validator = RMLValidator()
         tmpdir = validator._extract_sample_csv(
-            rml_custom, semicolon_csv, sample_rows=2
+            semicolon_csv, "test.csv", sample_rows=2
         )
 
         try:
@@ -636,7 +633,7 @@ ex:Map rr:subjectMap [ ] .
         """Test extraction from CSV with fewer rows than requested."""
         validator = RMLValidator()
         tmpdir = validator._extract_sample_csv(
-            sample_rml, small_csv, sample_rows=10
+            small_csv, "data.csv", sample_rows=10
         )
 
         try:
@@ -661,7 +658,7 @@ ex:Map rr:subjectMap [ ] .
         """Test sample extraction with CSVW-style RML (csvw:url)."""
         validator = RMLValidator()
         tmpdir = validator._extract_sample_csv(
-            sample_csvw_rml, semicolon_csv, sample_rows=2
+            semicolon_csv, "semicolon.csv", sample_rows=2
         )
 
         try:

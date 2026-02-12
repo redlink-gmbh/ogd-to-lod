@@ -9,6 +9,7 @@ from ogd_to_lod.ai.service import (
     Message,
     ParsedResponse,
     RateLimitExceeded,
+    RequestLimitReached,
 )
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "Message",
     "ParsedResponse",
     "RateLimitExceeded",
+    "RequestLimitReached",
     "DEFAULT_SYSTEM_PROMPT",
 ]
