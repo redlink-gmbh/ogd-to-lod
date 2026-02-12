@@ -8,7 +8,7 @@
 
 ex:TriplesMap a rr:TriplesMap ;
     rml:logicalSource [
-        rml:source "data.csv" ;
+        rml:source "{{CSV_SOURCE}}" ;
         rml:referenceFormulation ql:CSV
     ] ;
     rr:subjectMap [

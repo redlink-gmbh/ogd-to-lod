@@ -824,7 +824,7 @@ class TestCreatePrNodeEnhancements:
         assert call_args.kwargs["mapping_name"] == "fallback"
 
     @patch("ogd_to_lod.graph.nodes.GitHubService")
-    def test_applies_file_url_placeholder(self, mock_gh_cls, mock_config):
+    def test_passes_rml_with_csv_source_placeholder(self, mock_gh_cls, mock_config):
         mock_service = MagicMock()
         mock_service.create_mapping_pr.return_value = MagicMock(
             pr_url="https://github.com/test/repo/pull/1",
@@ -834,14 +834,13 @@ class TestCreatePrNodeEnhancements:
 
         state = GraphState(
             csv_path="/data/test.csv",
-            generated_rml='@prefix rml: <http://semweb.mmlab.be/ns/rml#> .\nex:M rml:logicalSource [ rml:source "test.csv" ].',
+            generated_rml='@prefix rml: <http://semweb.mmlab.be/ns/rml#> .\nex:M rml:logicalSource [ rml:source "{{CSV_SOURCE}}" ].',
             mapping_name="test",
         )
         create_pr_node(state, mock_config)
         call_args = mock_service.create_mapping_pr.call_args
         rml_committed = call_args.kwargs["rml_content"]
-        assert "{{FILE_URL}}" in rml_committed
-        assert '"test.csv"' not in rml_committed
+        assert "{{CSV_SOURCE}}" in rml_committed
 
 
 class TestBuildPrDescriptionIncludesRdfPreview:

@@ -551,10 +551,11 @@ class TestProcessResultEmptyOutput:
 class TestSampleCSVExtraction:
     """Tests for _extract_sample_csv and _get_rml_source_filename."""
 
-    def test_correct_filename_from_rml(self, sample_rml):
+    def test_correct_filename_from_rml(self):
         """Test that source filename is parsed from RML content."""
+        rml_with_source = '@prefix rml: <http://semweb.mmlab.be/ns/rml#> .\nex:M rml:logicalSource [ rml:source "data.csv" ] .'
         filename = RMLValidator._get_rml_source_filename(
-            sample_rml, "/path/to/other.csv"
+            rml_with_source, "/path/to/other.csv"
         )
         assert filename == "data.csv"
 

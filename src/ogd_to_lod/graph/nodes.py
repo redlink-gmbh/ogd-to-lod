@@ -18,7 +18,7 @@ from ogd_to_lod.github.pr_template import (
 )
 from ogd_to_lod.logging import get_logger
 from ogd_to_lod.parsers import CSVParseError, DCATParseError, dcat_format_to_extension, parse_csv, parse_dcat
-from ogd_to_lod.rml import RMLGenerationError, RMLGenerator, replace_csv_source_with_placeholder
+from ogd_to_lod.rml import RMLGenerationError, RMLGenerator
 from ogd_to_lod.validation import RMLValidator, ValidationResult
 
 from .state import (
@@ -528,19 +528,6 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
         csv_filename = state.csv_path.split("/")[-1].split("\\")[-1]
         mapping_name = csv_filename.rsplit(".", 1)[0] if "." in csv_filename else csv_filename
 
-    # Replace local CSV filename with {{FILE_URL}} placeholder
-    csv_filename = state.csv_path.split("/")[-1].split("\\")[-1]
-    source_comment = (
-        f"Original source: {state.csv_source_url}"
-        if state.csv_source_url
-        else f"Original source: {state.csv_path}"
-    )
-    rml_content = replace_csv_source_with_placeholder(
-        state.generated_rml,
-        csv_filename,
-        source_comment=source_comment,
-    )
-
     # Build PR description
     pr_description = _build_pr_description(state, mapping_name)
 
@@ -557,7 +544,7 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
         github_service = GitHubService(config.github)
         result = github_service.create_mapping_pr(
             mapping_name=mapping_name,
-            rml_content=rml_content,
+            rml_content=state.generated_rml,
             description=pr_description,
             dcat_content=dcat_content,
             dcat_filename=dcat_filename,
