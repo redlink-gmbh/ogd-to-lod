@@ -21,7 +21,8 @@ This is the OGD to LOD project - a tool to create RML (RDF Mapping Language) map
 - `ogd-to-lod` - run the CLI tool
 
 ### Environment
-- GitHub token available via `$GITHUB_TOKEN` environment variable (from `.env`)
+- GitHub token available via `$APP_GITHUB_TOKEN` environment variable (from `.env`) — this is for the application runtime only
+- When acting as Claude Code agent (e.g. using `gh` CLI), use `$GITHUB_TOKEN` from the shell environment directly — never source `.env` or use `APP_GITHUB_TOKEN` for agent actions
 - Azure OpenAI credentials via `$AZURE_OPENAI_ENDPOINT` and `$AZURE_OPENAI_KEY`
 
 ## Project Structure

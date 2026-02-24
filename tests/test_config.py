@@ -53,13 +53,13 @@ class TestLoadConfig:
 
     def test_load_valid_config(self, monkeypatch, tmp_path):
         """Test loading a valid configuration file."""
-        monkeypatch.setenv("TEST_GITHUB_TOKEN", "gh_token")
+        monkeypatch.setenv("TEST_APP_GITHUB_TOKEN", "gh_token")
         monkeypatch.setenv("TEST_AZURE_KEY", "azure_key")
 
         config_content = """
 github:
   repo: "org/repo"
-  token: "${TEST_GITHUB_TOKEN}"
+  token: "${TEST_APP_GITHUB_TOKEN}"
 
 azure:
   endpoint: "https://test.openai.azure.com/"
