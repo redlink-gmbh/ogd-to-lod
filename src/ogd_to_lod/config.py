@@ -47,6 +47,7 @@ class RMLConfig:
     rmlmapper_jar: str | None = None
     rmlmapper_use_docker: bool = False
     rmlmapper_docker_image: str = "rmlio/rmlmapper-java:latest"
+    yarrrml_parser_docker_image: str = "rmlio/yarrrml-parser:latest"
 
 
 @dataclass
@@ -203,6 +204,9 @@ def load_config(config_path: str | Path) -> Config:
             rmlmapper_use_docker=rml_data.get("rmlmapper_use_docker", False),
             rmlmapper_docker_image=rml_data.get(
                 "rmlmapper_docker_image", "rmlio/rmlmapper-java:latest"
+            ),
+            yarrrml_parser_docker_image=rml_data.get(
+                "yarrrml_parser_docker_image", "rmlio/yarrrml-parser:latest"
             ),
         )
 

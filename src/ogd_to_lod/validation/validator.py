@@ -1,9 +1,10 @@
-"""RML validation using RMLMapper.
+"""YARRRML validation using a two-step Docker pipeline.
 
-This module provides two-tier validation for RML mappings:
-- Tier 1 (syntax): Cheap rdflib parse check, suitable for auto-retry on AI errors.
-- Tier 2 (RMLMapper): Thorough data-aware check using sample CSV data, escalates to
-  user on failure since data-fit issues need human judgement.
+This module provides two-tier validation for YARRRML mappings:
+- Tier 1 (syntax): yaml.safe_load() + structural checks (pure Python, fast).
+- Tier 2 (Docker): yarrrml-parser converts YARRRML → Turtle RML, then
+  RMLMapper executes it against sample CSV data. Escalates to the user on
+  failure since data-fit issues need human judgement.
 """
 
 import csv
@@ -13,6 +14,8 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import yaml
 
 from ogd_to_lod.logging import get_logger
 
@@ -56,17 +59,16 @@ class ValidationResult:
 
 
 class RMLValidator:
-    """Validates RML mappings using RMLMapper.
+    """Validates YARRRML mappings using a two-step Docker pipeline.
 
     This validator supports two tiers:
-    1. Syntax validation via rdflib (fast, no external dependencies)
-    2. Full validation via RMLMapper against sample CSV data
+    1. Syntax validation via yaml.safe_load() + structural checks (fast, no Docker)
+    2. Full validation via yarrrml-parser → RMLMapper against sample CSV data
 
-    The validator uses RMLMapper, a Java-based tool that must be available
-    either as a JAR file or via Docker.
+    Tier 2 requires Docker with the yarrrml-parser and rmlmapper-java images.
     """
 
-    # Default timeout for RMLMapper execution (in seconds)
+    # Default timeout for Docker execution (in seconds)
     DEFAULT_TIMEOUT = 60
 
     def __init__(
@@ -74,44 +76,45 @@ class RMLValidator:
         rmlmapper_jar: str | None = None,
         use_docker: bool = False,
         docker_image: str = "rmlio/rmlmapper-java:latest",
+        yarrrml_parser_docker_image: str = "rmlio/yarrrml-parser:latest",
     ):
         """Initialize the validator.
 
         Args:
-            rmlmapper_jar: Path to RMLMapper JAR file. If not provided,
-                will look for RMLMAPPER_JAR environment variable.
-            use_docker: If True, use Docker instead of JAR file.
-            docker_image: Docker image to use (only if use_docker=True).
+            rmlmapper_jar: Path to RMLMapper JAR file (kept for backward
+                compatibility; unused when use_docker=True).
+            use_docker: If True, use Docker for Tier 2 validation.
+            docker_image: Docker image for RMLMapper.
+            yarrrml_parser_docker_image: Docker image for yarrrml-parser.
         """
         self._use_docker = use_docker
         self._docker_image = docker_image
+        self._yarrrml_parser_image = yarrrml_parser_docker_image
 
         if use_docker:
             self._rmlmapper_jar = None
         else:
             jar = rmlmapper_jar or os.environ.get("RMLMAPPER_JAR")
-            # Resolve to absolute so the path works even when cwd changes
-            # (e.g. when running RMLMapper in a temp directory).
             self._rmlmapper_jar = str(Path(jar).resolve()) if jar else None
 
     # ── Tier 1: Syntax validation ────────────────────────────────────────
 
     def validate_syntax(self, rml_content: str) -> ValidationResult:
-        """Validate RML Turtle syntax using rdflib (Tier 1).
+        """Validate YARRRML syntax using yaml.safe_load() + structural checks (Tier 1).
 
-        This is a fast, cheap check that catches syntax errors without needing
-        RMLMapper or CSV data. Suitable for auto-retry when the AI produces
-        invalid Turtle.
+        This is a fast, cheap check that catches YAML syntax errors and missing
+        required keys without needing Docker or CSV data. Suitable for auto-retry
+        when the AI produces invalid YARRRML.
 
         Args:
-            rml_content: RML mapping in Turtle format.
+            rml_content: YARRRML mapping in YAML format.
 
         Returns:
             ValidationResult with syntax validation outcome.
         """
-        return self._validate_syntax_only(rml_content)
+        return self._validate_yaml_syntax(rml_content)
 
-    # ── Tier 2: RMLMapper validation ─────────────────────────────────────
+    # ── Tier 2: Docker two-step validation ───────────────────────────────
 
     def validate_with_rmlmapper(
         self,
@@ -121,18 +124,20 @@ class RMLValidator:
         output_format: str = "turtle",
         timeout: int | None = None,
     ) -> ValidationResult:
-        """Validate RML by executing it against sample CSV data (Tier 2).
+        """Validate YARRRML by converting and executing it against sample CSV (Tier 2).
 
-        Extracts the first N rows from the CSV, writes them to a temp directory
-        with a sample filename, then runs RMLMapper. If the RML contains the
-        {{CSV_SOURCE}} placeholder, it will be replaced with the sample filename.
+        Two-step Docker pipeline:
+        1. yarrrml-parser converts YARRRML → Turtle RML
+        2. RMLMapper executes the Turtle RML against sample CSV data
+
+        All files share a single temp directory mounted at /data in both containers.
 
         Args:
-            rml_content: RML mapping in Turtle format (may contain {{CSV_SOURCE}} placeholder).
+            rml_content: YARRRML mapping (may contain {{CSV_SOURCE}} placeholder).
             csv_path: Path to the source CSV file.
             sample_rows: Number of data rows to include in sample (default: 3).
             output_format: Output format for RDF (turtle, nquads, jsonld).
-            timeout: Timeout in seconds (default: 60).
+            timeout: Timeout in seconds per Docker step (default: 60).
 
         Returns:
             ValidationResult with validation outcome, including error
@@ -140,25 +145,14 @@ class RMLValidator:
         """
         timeout = timeout or self.DEFAULT_TIMEOUT
 
-        # Check if RMLMapper is available
-        if not self._use_docker and not self._rmlmapper_jar:
-            logger.warning("RMLMapper not configured, skipping Tier 2 validation")
-            return ValidationResult(
-                valid=True,
-                warnings=["RMLMapper not configured — Tier 2 validation skipped"],
-            )
-
-        if not self._use_docker and not Path(self._rmlmapper_jar).exists():
-            logger.warning(
-                f"RMLMapper JAR not found at {self._rmlmapper_jar}, "
-                "skipping Tier 2 validation"
-            )
+        # When Docker is not enabled, skip Tier 2 gracefully
+        if not self._use_docker:
+            logger.warning("Docker not enabled, skipping Tier 2 validation")
             return ValidationResult(
                 valid=True,
                 warnings=[
-                    f"RMLMapper JAR not found at {self._rmlmapper_jar} "
-                    "— Tier 2 validation skipped. "
-                    "Run scripts/setup-rmlmapper.sh to download it."
+                    "Docker not enabled — Tier 2 validation skipped. "
+                    "Set rmlmapper_use_docker: true in config to enable full validation."
                 ],
             )
 
@@ -171,27 +165,28 @@ class RMLValidator:
                 user_friendly_error=f"The CSV file '{csv_path}' does not exist.",
             )
 
-        # Extract sample CSV and run RMLMapper in temp directory
-        # Use a simple sample filename for the CSV
+        # Extract sample CSV into a shared temp directory
         sample_filename = "sample.csv"
         tmpdir = self._extract_sample_csv(csv_path, sample_filename, sample_rows)
+
         try:
-            rml_file = Path(tmpdir.name) / "mapping.ttl"
+            yarrrml_file = Path(tmpdir.name) / "mapping.yarrrml.yaml"
             output_file = Path(tmpdir.name) / "output.ttl"
 
             # Replace the CSV source placeholder with the sample filename
-            rml_with_source = self._replace_csv_placeholder(rml_content, sample_filename)
-            rml_file.write_text(self._ensure_base_directive(rml_with_source))
+            yarrrml_with_source = self._replace_csv_placeholder(rml_content, sample_filename)
+            yarrrml_file.write_text(yarrrml_with_source)
 
             try:
-                if self._use_docker:
-                    result = self._run_docker(
-                        rml_file, tmpdir.name, output_file, output_format, timeout
-                    )
-                else:
-                    result = self._run_jar_in_dir(
-                        rml_file, tmpdir.name, output_file, output_format, timeout
-                    )
+                # Step 1: yarrrml-parser converts YARRRML → Turtle RML
+                parser_result = self._run_yarrrml_parser_docker(tmpdir.name, timeout)
+                if not parser_result.valid:
+                    return parser_result
+
+                # Step 2: RMLMapper executes Turtle RML against sample CSV
+                result = self._run_rmlmapper_docker(
+                    tmpdir.name, output_file, output_format, timeout
+                )
 
                 # Categorise errors if validation failed
                 if not result.valid and result.error_message:
@@ -204,18 +199,13 @@ class RMLValidator:
             except subprocess.TimeoutExpired:
                 return ValidationResult(
                     valid=False,
-                    error_message=f"RMLMapper timed out after {timeout} seconds",
+                    error_message=f"Validation timed out after {timeout} seconds",
                     error_category="timeout",
                     user_friendly_error=(
-                        f"RMLMapper took longer than {timeout} seconds. "
+                        f"Validation took longer than {timeout} seconds. "
                         "The mapping may be too complex or contain infinite loops."
                     ),
                 )
-            except FileNotFoundError as e:
-                raise RMLMapperNotFoundError(
-                    f"RMLMapper not found: {e}. "
-                    "Ensure Java is installed and RMLMAPPER_JAR is set."
-                ) from e
             except Exception as e:
                 logger.error(f"Unexpected error during validation: {e}")
                 return ValidationResult(
@@ -236,29 +226,25 @@ class RMLValidator:
         output_format: str = "turtle",
         timeout: int | None = None,
     ) -> ValidationResult:
-        """Validate an RML mapping by executing it (backward-compatible).
+        """Validate a YARRRML mapping (backward-compatible).
 
-        Runs both tiers: syntax first, then RMLMapper if available.
+        Runs both tiers: YAML syntax first, then Docker two-step if available.
 
         Args:
-            rml_content: RML mapping in Turtle format.
+            rml_content: YARRRML mapping in YAML format.
             csv_path: Path to the source CSV file.
             output_format: Output format for RDF (turtle, nquads, jsonld).
             timeout: Timeout in seconds (default: 60).
 
         Returns:
             ValidationResult with validation outcome.
-
-        Raises:
-            RMLMapperNotFoundError: If RMLMapper is not available.
-            RMLValidationError: If validation fails due to configuration issues.
         """
         # Tier 1: syntax check
         syntax_result = self.validate_syntax(rml_content)
         if not syntax_result.valid:
             return syntax_result
 
-        # Tier 2: RMLMapper check
+        # Tier 2: Docker two-step
         return self.validate_with_rmlmapper(
             rml_content, csv_path, output_format=output_format, timeout=timeout
         )
@@ -332,65 +318,19 @@ class RMLValidator:
         """Replace CSV source placeholder with actual filename.
 
         Replaces all occurrences of {{CSV_SOURCE}} with the provided filename.
-        If the placeholder is not found, the RML is returned unchanged (for
-        backward compatibility with mappings that have hardcoded paths).
+        If the placeholder is not found, the YARRRML is returned unchanged.
 
         Args:
-            rml_content: RML content possibly containing {{CSV_SOURCE}} placeholder.
+            rml_content: YARRRML content possibly containing {{CSV_SOURCE}} placeholder.
             csv_filename: The actual CSV filename to substitute.
 
         Returns:
-            RML content with placeholder replaced.
+            YARRRML content with placeholder replaced.
         """
         if CSV_SOURCE_PLACEHOLDER in rml_content:
             logger.debug(f"Replacing {CSV_SOURCE_PLACEHOLDER} with {csv_filename}")
             return rml_content.replace(CSV_SOURCE_PLACEHOLDER, csv_filename)
         return rml_content
-
-    @staticmethod
-    def _ensure_base_directive(rml_content: str) -> str:
-        """Prepend a @base directive if the RML uses relative IRIs without one.
-
-        RMLMapper (RDF4J) rejects relative IRIs like <#LogicalSource> when no
-        @base is declared.  Adding a dummy base lets them resolve correctly.
-
-        Args:
-            rml_content: RML content in Turtle format.
-
-        Returns:
-            RML content with @base prepended if needed.
-        """
-        has_base = bool(re.search(r'@base\s+<', rml_content, re.IGNORECASE))
-        has_relative_iris = bool(re.search(r'<#\w', rml_content))
-        if has_relative_iris and not has_base:
-            logger.debug("Injecting @base directive for relative IRIs")
-            return '@base <http://example.org/mapping/> .\n' + rml_content
-        return rml_content
-
-    @staticmethod
-    def _get_rml_source_filename(rml_content: str, csv_path: str) -> str:
-        """Parse the source filename from RML content.
-
-        Looks for ``rml:source "filename"`` (simple form) or
-        ``csvw:url "filename"`` (CSVW dialect form). Falls back to the
-        basename of the provided *csv_path*.
-
-        Args:
-            rml_content: RML content in Turtle format.
-            csv_path: Fallback CSV path.
-
-        Returns:
-            The filename the RML expects.
-        """
-        # Simple form: rml:source "filename"
-        match = re.search(r'rml:source\s+"([^"]+)"', rml_content)
-        if match:
-            return match.group(1)
-        # CSVW form: csvw:url "filename"
-        match = re.search(r'csvw:url\s+"([^"]+)"', rml_content)
-        if match:
-            return match.group(1)
-        return Path(csv_path).name
 
     # ── Error categorisation ─────────────────────────────────────────────
 
@@ -399,12 +339,19 @@ class RMLValidator:
         """Categorise an RMLMapper error into a user-friendly bucket.
 
         Args:
-            error_message: Raw error message from RMLMapper.
+            error_message: Raw error message from RMLMapper or yarrrml-parser.
 
         Returns:
             Tuple of (category, user_friendly_description).
         """
         msg_lower = error_message.lower()
+
+        if "yarrrml" in msg_lower or "yaml" in msg_lower:
+            return (
+                "yarrrml_parse_error",
+                "The YARRRML mapping could not be parsed. "
+                "Check the YAML syntax and YARRRML structure.",
+            )
 
         if "column" in msg_lower and ("not found" in msg_lower or "missing" in msg_lower):
             return (
@@ -434,19 +381,18 @@ class RMLValidator:
             return (
                 "file_not_found",
                 "The mapping references a file that could not be found. "
-                "Ensure the rml:source filename matches the actual CSV file.",
+                "Ensure the access field filename matches the actual CSV file.",
             )
 
         if "parse" in msg_lower or "syntax" in msg_lower:
             return (
                 "syntax_error",
-                "The RML mapping has a syntax error that RMLMapper could "
-                "not parse. This may be a Turtle formatting issue.",
+                "The mapping has a syntax error that could not be parsed.",
             )
 
         return (
             "unknown",
-            f"RMLMapper validation failed: {error_message[:200]}",
+            f"Validation failed: {error_message[:200]}",
         )
 
     # ── Output analysis ─────────────────────────────────────────────────
@@ -479,63 +425,155 @@ class RMLValidator:
 
     # ── Internal helpers ─────────────────────────────────────────────────
 
-    def _validate_syntax_only(self, rml_content: str) -> ValidationResult:
-        """Validate RML syntax without executing the mapping.
-
-        Uses rdflib to parse the Turtle syntax.
+    def _validate_yaml_syntax(self, rml_content: str) -> ValidationResult:
+        """Validate YARRRML syntax using yaml.safe_load() + structural checks.
 
         Args:
-            rml_content: RML mapping in Turtle format.
+            rml_content: YARRRML mapping in YAML format.
 
         Returns:
             ValidationResult with syntax validation outcome.
         """
         try:
-            from rdflib import Graph
-
-            g = Graph()
-            g.parse(data=rml_content, format="turtle")
-
-            # Check for required RML components
-            warnings = []
-
-            # Check for logical source
-            logical_sources = list(
-                g.query(
-                    """
-                SELECT ?source WHERE {
-                    ?map rml:logicalSource ?source .
-                }
-            """
-                )
-            )
-            if not logical_sources:
-                warnings.append("No logical source (rml:logicalSource) found")
-
-            # Check for subject map
-            subject_maps = list(
-                g.query(
-                    """
-                SELECT ?map WHERE {
-                    ?map rr:subjectMap ?sm .
-                }
-            """
-                )
-            )
-            if not subject_maps:
-                warnings.append("No subject map (rr:subjectMap) found")
-
-            return ValidationResult(
-                valid=True,
-                rdf_output=None,
-                warnings=warnings if warnings else None,
-            )
-
-        except Exception as e:
+            doc = yaml.safe_load(rml_content)
+        except yaml.YAMLError as e:
             return ValidationResult(
                 valid=False,
-                error_message=f"RML syntax error: {e}",
+                error_message=f"YARRRML syntax error: {e}",
             )
+
+        if not isinstance(doc, dict):
+            return ValidationResult(
+                valid=False,
+                error_message="YARRRML must be a YAML mapping (dict at top level)",
+            )
+
+        if "mappings" not in doc:
+            return ValidationResult(
+                valid=False,
+                error_message="YARRRML must have a 'mappings' key",
+            )
+
+        warnings = []
+
+        if "prefixes" not in doc:
+            warnings.append("No 'prefixes' block found in YARRRML")
+
+        # Check each mapping entry for required keys
+        mappings = doc.get("mappings", {})
+        if isinstance(mappings, dict):
+            for name, mapping in mappings.items():
+                if not isinstance(mapping, dict):
+                    continue
+                if "sources" not in mapping:
+                    warnings.append(f"Mapping '{name}' has no 'sources'")
+                if "s" not in mapping:
+                    warnings.append(f"Mapping '{name}' has no subject ('s')")
+                if "po" not in mapping:
+                    warnings.append(f"Mapping '{name}' has no predicate-objects ('po')")
+
+        return ValidationResult(
+            valid=True,
+            warnings=warnings if warnings else None,
+        )
+
+    def _run_yarrrml_parser_docker(
+        self, tmpdir_name: str, timeout: int
+    ) -> ValidationResult:
+        """Run yarrrml-parser Docker container to convert YARRRML → Turtle RML.
+
+        Reads /data/mapping.yarrrml.yaml and writes /data/mapping.ttl.
+
+        Args:
+            tmpdir_name: Path to the shared temp directory mounted at /data.
+            timeout: Timeout in seconds.
+
+        Returns:
+            ValidationResult(valid=True) on success, ValidationResult(valid=False)
+            with error details on failure.
+        """
+        cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{tmpdir_name}:/data",
+            self._yarrrml_parser_image,
+            "-i",
+            "/data/mapping.yarrrml.yaml",
+            "-o",
+            "/data/mapping.ttl",
+        ]
+
+        logger.debug(f"Running yarrrml-parser: {' '.join(cmd)}")
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
+        if result.returncode != 0:
+            error_msg = result.stderr or result.stdout or "Unknown yarrrml-parser error"
+            logger.debug(f"yarrrml-parser failed: {error_msg}")
+            return ValidationResult(
+                valid=False,
+                error_message=error_msg,
+                error_category="syntax_error",
+                user_friendly_error=(
+                    "The YARRRML mapping could not be parsed. "
+                    "Check the YAML syntax and YARRRML structure."
+                ),
+            )
+
+        return ValidationResult(valid=True)
+
+    def _run_rmlmapper_docker(
+        self,
+        tmpdir_name: str,
+        output_file: Path,
+        output_format: str,
+        timeout: int,
+    ) -> ValidationResult:
+        """Run RMLMapper Docker container to execute Turtle RML → RDF output.
+
+        Reads /data/mapping.ttl and /data/sample.csv, writes /data/output.ttl.
+
+        Args:
+            tmpdir_name: Path to the shared temp directory mounted at /data.
+            output_file: Expected output file path (for reading results).
+            output_format: Output format (turtle, nquads, jsonld).
+            timeout: Timeout in seconds.
+
+        Returns:
+            ValidationResult with execution outcome.
+        """
+        cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{tmpdir_name}:/data",
+            self._docker_image,
+            "-m",
+            "/data/mapping.ttl",
+            "-o",
+            "/data/output.ttl",
+            "-s",
+            output_format,
+        ]
+
+        logger.debug(f"Running RMLMapper: {' '.join(cmd)}")
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
+        return self._process_result(result, output_file)
 
     def _run_jar_in_dir(
         self,
@@ -546,6 +584,8 @@ class RMLValidator:
         timeout: int,
     ) -> ValidationResult:
         """Execute RMLMapper JAR file with a specific working directory.
+
+        Kept for backward compatibility; not called in the default validation path.
 
         Args:
             rml_file: Path to RML mapping file.
@@ -569,7 +609,7 @@ class RMLValidator:
             output_format,
         ]
 
-        logger.debug(f"Running RMLMapper: {' '.join(cmd)}")
+        logger.debug(f"Running RMLMapper JAR: {' '.join(cmd)}")
 
         result = subprocess.run(
             cmd,
@@ -577,100 +617,6 @@ class RMLValidator:
             text=True,
             timeout=timeout,
             cwd=working_dir,
-        )
-
-        return self._process_result(result, output_file)
-
-    def _run_jar(
-        self,
-        rml_file: Path,
-        csv_path: str,
-        output_file: Path,
-        output_format: str,
-        timeout: int,
-    ) -> ValidationResult:
-        """Execute RMLMapper JAR file.
-
-        Args:
-            rml_file: Path to RML mapping file.
-            csv_path: Path to CSV source file.
-            output_file: Path for output file.
-            output_format: Output format.
-            timeout: Timeout in seconds.
-
-        Returns:
-            ValidationResult with execution outcome.
-        """
-        cmd = [
-            "java",
-            "-jar",
-            self._rmlmapper_jar,
-            "-m",
-            str(rml_file),
-            "-o",
-            str(output_file),
-            "-s",
-            output_format,
-        ]
-
-        logger.debug(f"Running RMLMapper: {' '.join(cmd)}")
-
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=Path(csv_path).parent,
-        )
-
-        return self._process_result(result, output_file)
-
-    def _run_docker(
-        self,
-        rml_file: Path,
-        csv_path: str,
-        output_file: Path,
-        output_format: str,
-        timeout: int,
-    ) -> ValidationResult:
-        """Execute RMLMapper via Docker.
-
-        Args:
-            rml_file: Path to RML mapping file.
-            csv_path: Path to CSV source file or directory containing CSV.
-            output_file: Path for output file.
-            output_format: Output format.
-            timeout: Timeout in seconds.
-
-        Returns:
-            ValidationResult with execution outcome.
-        """
-        csv_dir = Path(csv_path) if Path(csv_path).is_dir() else Path(csv_path).parent
-
-        cmd = [
-            "docker",
-            "run",
-            "--rm",
-            "-v",
-            f"{rml_file.parent}:/data",
-            "-v",
-            f"{csv_dir}:/csv:ro",
-            self._docker_image,
-            "-m",
-            "/data/mapping.ttl",
-            "-o",
-            "/data/output.ttl",
-            "-s",
-            output_format,
-        ]
-
-        logger.debug(f"Running RMLMapper via Docker: {' '.join(cmd)}")
-
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
         )
 
         return self._process_result(result, output_file)
@@ -748,10 +694,10 @@ class RMLValidator:
             )
 
     def _clean_error_message(self, error_msg: str) -> str:
-        """Clean up RMLMapper error messages for better readability.
+        """Clean up error messages for better readability.
 
         Args:
-            error_msg: Raw error message from RMLMapper.
+            error_msg: Raw error message.
 
         Returns:
             Cleaned error message.
@@ -773,10 +719,10 @@ class RMLValidator:
         return "\n".join(cleaned_lines).strip()
 
     def is_available(self) -> bool:
-        """Check if RMLMapper is available.
+        """Check if RMLMapper Docker image is available.
 
         Returns:
-            True if RMLMapper can be executed.
+            True if the RMLMapper Docker image is present locally.
         """
         if self._use_docker:
             try:
@@ -801,13 +747,13 @@ def validate_rml(
     rmlmapper_jar: str | None = None,
     use_docker: bool = False,
 ) -> ValidationResult:
-    """Convenience function to validate RML.
+    """Convenience function to validate a YARRRML mapping.
 
     Args:
-        rml_content: RML mapping in Turtle format.
+        rml_content: YARRRML mapping in YAML format.
         csv_path: Path to the source CSV file.
-        rmlmapper_jar: Path to RMLMapper JAR (optional).
-        use_docker: Use Docker instead of JAR.
+        rmlmapper_jar: Path to RMLMapper JAR (optional, unused when Docker enabled).
+        use_docker: Use Docker for Tier 2 validation.
 
     Returns:
         ValidationResult with validation outcome.

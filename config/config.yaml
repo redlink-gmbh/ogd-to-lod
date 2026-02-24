@@ -4,7 +4,7 @@
 github:
   # Target repository for generated mappings (can also be set via GITHUB_REPO env var)
   repo: "redlink-gmbh/ogd-to-lod-mappings"
-  token: "${GITHUB_TOKEN}"
+  token: "${APP_GITHUB_TOKEN}"
 
 azure:
   endpoint: "${AZURE_OPENAI_ENDPOINT}"
@@ -26,11 +26,9 @@ sparql:
 rml:
   # Base URI pattern for generated resources
   base_uri: "https://ld.stadt-zuerich.ch/statistics/"
-  # RMLMapper configuration for validation
-  # Path to RMLMapper JAR file (can also be set via RMLMAPPER_JAR env var)
-  # Run scripts/setup-rmlmapper.sh to download automatically
-  rmlmapper_jar: "tools/rmlmapper.jar"
-  # Use Docker instead of JAR (set to true if you have Docker installed)
-  rmlmapper_use_docker: false
-  # Docker image to use (only if rmlmapper_use_docker is true)
+  # Use Docker for two-step validation: yarrrml-parser → RMLMapper
+  rmlmapper_use_docker: true
+  # Docker image for RMLMapper (Tier 2 validation, step 2)
   rmlmapper_docker_image: "rmlio/rmlmapper-java:latest"
+  # Docker image for yarrrml-parser (Tier 2 validation, step 1)
+  yarrrml_parser_docker_image: "rmlio/yarrrml-parser:latest"

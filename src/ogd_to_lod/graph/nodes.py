@@ -310,9 +310,9 @@ Your response (one word only):"""
 
 
 def generate_node(state: GraphState, ai_service: AIService) -> GraphState:
-    """Generate RML mapping from approved proposal.
+    """Generate YARRRML mapping from approved proposal.
 
-    Uses the AI service to generate RML (RDF Mapping Language) in Turtle format
+    Uses the AI service to generate YARRRML (YAML-based RML)
     based on the approved mapping proposal and CSV schema.
 
     Args:
@@ -363,10 +363,10 @@ def generate_node(state: GraphState, ai_service: AIService) -> GraphState:
         state.generated_rml = rml_content
         state.add_message(
             "assistant",
-            f"Generated RML mapping:\n\n```turtle\n{rml_content}\n```"
+            f"Generated YARRRML mapping:\n\n```yaml\n{rml_content}\n```"
         )
 
-        logger.info(f"Successfully generated RML ({len(rml_content)} characters)")
+        logger.info(f"Successfully generated YARRRML ({len(rml_content)} characters)")
 
         # Transition to PREVIEW state
         state.current_state = FlowState.PREVIEW
@@ -865,7 +865,7 @@ def syntax_check_node(state: GraphState) -> GraphState:
 
 
 def regenerate_node(state: GraphState, ai_service: AIService) -> GraphState:
-    """Regenerate RML by sending the validation error back to the AI.
+    """Regenerate YARRRML by sending the validation error back to the AI.
 
     Uses the error stored in ``state.validation_error`` (set by
     ``syntax_check_node``) to give the AI targeted feedback.  Updates
@@ -889,10 +889,10 @@ def regenerate_node(state: GraphState, ai_service: AIService) -> GraphState:
         state.generated_rml = rml_content
         state.add_message(
             "assistant",
-            f"Corrected RML mapping:\n\n```turtle\n{rml_content}\n```",
+            f"Corrected YARRRML mapping:\n\n```yaml\n{rml_content}\n```",
         )
 
-        logger.info(f"Regenerated RML ({len(rml_content)} characters)")
+        logger.info(f"Regenerated YARRRML ({len(rml_content)} characters)")
 
         # Transition to PREVIEW so syntax_check_node can re-validate
         state.current_state = FlowState.PREVIEW
@@ -909,27 +909,30 @@ def validate_node(
     state: GraphState,
     rmlmapper_jar: str | None = None,
     use_docker: bool = False,
+    yarrrml_parser_docker_image: str = "rmlio/yarrrml-parser:latest",
 ) -> GraphState:
-    """Tier 2: Validate RML with RMLMapper against sample CSV data.
+    """Tier 2: Validate YARRRML mapping using Docker two-step pipeline.
 
-    Runs the full RMLMapper validation. On failure, escalates to the user
-    (transitions to REFINE) since data-fit issues need human judgement.
+    Converts YARRRML → Turtle via yarrrml-parser, then runs RMLMapper.
+    On failure, escalates to the user (transitions to REFINE) since
+    data-fit issues need human judgement.
 
-    If RMLMapper is unavailable, gracefully skips to PREVIEW with a note.
+    If Docker is not enabled, gracefully skips to PREVIEW with a note.
 
     Args:
-        state: Current graph state with generated RML.
-        rmlmapper_jar: Path to RMLMapper JAR file (optional).
-        use_docker: Whether to use Docker for RMLMapper.
+        state: Current graph state with generated YARRRML.
+        rmlmapper_jar: Path to RMLMapper JAR file (optional, unused when Docker enabled).
+        use_docker: Whether to use Docker for validation.
+        yarrrml_parser_docker_image: Docker image for yarrrml-parser.
 
     Returns:
         Updated state with validation result.
     """
-    logger.info("Entering VALIDATE state (Tier 2 — RMLMapper)")
+    logger.info("Entering VALIDATE state (Tier 2 — yarrrml-parser + RMLMapper)")
 
     # Check prerequisites
     if not state.generated_rml:
-        state.error_message = "No RML to validate"
+        state.error_message = "No YARRRML to validate"
         state.current_state = FlowState.ERROR
         return state
 
@@ -939,7 +942,11 @@ def validate_node(
         return state
 
     # Initialize validator
-    validator = RMLValidator(rmlmapper_jar=rmlmapper_jar, use_docker=use_docker)
+    validator = RMLValidator(
+        rmlmapper_jar=rmlmapper_jar,
+        use_docker=use_docker,
+        yarrrml_parser_docker_image=yarrrml_parser_docker_image,
+    )
 
     # Run Tier 2 validation with sample CSV
     logger.debug(f"Validating RML against sample from {state.csv_path}")

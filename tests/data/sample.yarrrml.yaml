@@ -1,0 +1,33 @@
+prefixes:
+  rml: "http://semweb.mmlab.be/ns/rml#"
+  rr: "http://www.w3.org/ns/r2rml#"
+  ql: "http://semweb.mmlab.be/ns/ql#"
+  schema: "http://schema.org/"
+  cube: "https://cube.link/"
+  xsd: "http://www.w3.org/2001/XMLSchema#"
+  ex: "https://example.org/"
+  ex-obs: "https://example.org/observation/"
+  ex-property: "https://example.org/property/"
+  ex-code: "https://example.org/code/"
+
+mappings:
+  observations:
+    sources:
+      - access: "{{CSV_SOURCE}}"
+        referenceFormulation: csv
+        delimiter: ","
+    s: ex-obs:$(year)_$(region)
+    po:
+      - [a, cube:Observation]
+      - [ex-property:ZEIT, $(year), xsd:gYear]
+      - [ex-property:RAUM, ex-code:$(region)~iri]
+      - [ex-property:value, $(value), xsd:decimal]
+  regionCodes:
+    sources:
+      - access: "{{CSV_SOURCE}}"
+        referenceFormulation: csv
+        delimiter: ","
+    s: ex-code:$(region)
+    po:
+      - [a, schema:DefinedTerm]
+      - [schema:name, $(region)]

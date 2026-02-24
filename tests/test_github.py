@@ -131,7 +131,7 @@ class TestGitHubService:
         # Verify file was created
         mock_repo.create_file.assert_called_once()
         call_kwargs = mock_repo.create_file.call_args[1]
-        assert call_kwargs["path"] == "mappings/test-mapping/mapping.ttl"
+        assert call_kwargs["path"] == "mappings/test-mapping/mapping.yarrrml.yaml"
         assert call_kwargs["content"] == "@prefix rr: <...> ."
         assert call_kwargs["branch"] == "mapping/test-mapping"
 
@@ -333,7 +333,7 @@ class TestGitHubService:
         assert result.pr_number == 45
 
     def test_subfolder_layout(self, github_config, mock_github):
-        """Test that file path uses subfolder layout: mappings/{name}/mapping.ttl."""
+        """Test that file path uses subfolder layout: mappings/{name}/mapping.yarrrml.yaml."""
         mock_repo = MagicMock()
         mock_github.return_value.get_repo.return_value = mock_repo
 
@@ -358,7 +358,7 @@ class TestGitHubService:
         )
 
         call_kwargs = mock_repo.create_file.call_args[1]
-        assert call_kwargs["path"] == "mappings/my-dataset/mapping.ttl"
+        assert call_kwargs["path"] == "mappings/my-dataset/mapping.yarrrml.yaml"
 
     def test_dcat_file_committed_alongside_rml(self, github_config, mock_github):
         """Test that DCAT file is committed when content and filename provided."""
@@ -393,7 +393,7 @@ class TestGitHubService:
 
         rml_path = calls[0][1]["path"]
         dcat_path = calls[1][1]["path"]
-        assert rml_path == "mappings/with-dcat/mapping.ttl"
+        assert rml_path == "mappings/with-dcat/mapping.yarrrml.yaml"
         assert dcat_path == "mappings/with-dcat/metadata.ttl"
         assert calls[1][1]["content"] == "@prefix dcat: <...> ."
 
@@ -425,4 +425,4 @@ class TestGitHubService:
         # Should have exactly one create_file call (RML only)
         assert mock_repo.create_file.call_count == 1
         call_kwargs = mock_repo.create_file.call_args[1]
-        assert call_kwargs["path"] == "mappings/no-dcat/mapping.ttl"
+        assert call_kwargs["path"] == "mappings/no-dcat/mapping.yarrrml.yaml"

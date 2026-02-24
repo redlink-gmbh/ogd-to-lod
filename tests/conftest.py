@@ -1,6 +1,7 @@
 """Shared pytest fixtures for the ogd-to-lod test suite."""
 
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -34,14 +35,8 @@ def small_csv(data_dir):
 
 @pytest.fixture(scope="session")
 def sample_rml(data_dir):
-    """The SAMPLE_RML Turtle content used across validation tests."""
-    return (data_dir / "sample.rml.ttl").read_text()
-
-
-@pytest.fixture(scope="session")
-def sample_csvw_rml(data_dir):
-    """RML Turtle content using CSVW dialect for semicolon-delimited CSV."""
-    return (data_dir / "sample_csvw.rml.ttl").read_text()
+    """The sample YARRRML mapping content used across validation tests."""
+    return (data_dir / "sample.yarrrml.yaml").read_text()
 
 
 # ── RMLMapper availability fixtures (for integration tests) ────────────
@@ -66,3 +61,21 @@ def java_available():
 def rmlmapper_available(rmlmapper_jar, java_available):
     """Ensure both JAR and Java are present; return the JAR path."""
     return rmlmapper_jar
+
+
+@pytest.fixture(scope="session")
+def docker_available():
+    """Assert that Docker is available and running, or skip."""
+    if shutil.which("docker") is None:
+        pytest.skip("Docker not found on PATH")
+    try:
+        result = subprocess.run(
+            ["docker", "info"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            pytest.skip("Docker daemon is not running")
+    except Exception:
+        pytest.skip("Docker is not available")

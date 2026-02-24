@@ -505,4 +505,4 @@ class TestDefaultSystemPrompt:
     def test_default_prompt_mentions_response_format(self):
         """Test that default prompt specifies response format."""
         assert "YAML" in DEFAULT_SYSTEM_PROMPT
-        assert "Turtle" in DEFAULT_SYSTEM_PROMPT
+        assert "YARRRML" in DEFAULT_SYSTEM_PROMPT

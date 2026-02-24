@@ -1,7 +1,5 @@
 """RML generation using AI service."""
 
-import re
-from pathlib import Path
 from typing import Any
 
 from ogd_to_lod.ai import AIService
@@ -10,7 +8,7 @@ from ogd_to_lod.rml.prompts import RML_CORRECTION_PROMPT, RML_GENERATION_PROMPT
 
 logger = get_logger(__name__)
 
-# Placeholder for CSV source path in generated RML
+# Placeholder for CSV source path in generated YARRRML
 # This should be replaced with the actual CSV path at deployment time
 CSV_SOURCE_PLACEHOLDER = "{{CSV_SOURCE}}"
 
@@ -22,17 +20,17 @@ class RMLGenerationError(Exception):
 
 
 class RMLGenerator:
-    """Generates RML mappings using AI service.
+    """Generates YARRRML mappings using AI service.
 
-    Uses the AI service to generate RML (RDF Mapping Language) configurations
-    in Turtle format based on approved mapping proposals and CSV schemas.
+    Uses the AI service to generate YARRRML (YAML-based RML) configurations
+    based on approved mapping proposals and CSV schemas.
     """
 
     def __init__(self, ai_service: AIService):
         """Initialize the RML generator.
 
         Args:
-            ai_service: AI service instance for generating RML.
+            ai_service: AI service instance for generating YARRRML.
         """
         self._ai_service = ai_service
 
@@ -43,7 +41,7 @@ class RMLGenerator:
         csv_path: str,
         base_uri: str,
     ) -> str:
-        """Generate RML mapping from approved proposal.
+        """Generate YARRRML mapping from approved proposal.
 
         Args:
             mapping_proposal: The approved mapping proposal dictionary.
@@ -52,19 +50,19 @@ class RMLGenerator:
             base_uri: Base URI for generated resources.
 
         Returns:
-            Generated RML in Turtle format.
+            Generated YARRRML mapping.
 
         Raises:
-            RMLGenerationError: If generation fails or no valid RML is produced.
+            RMLGenerationError: If generation fails or no valid YARRRML is produced.
         """
-        logger.info("Generating RML from mapping proposal")
+        logger.info("Generating YARRRML from mapping proposal")
 
         # Format the mapping proposal for the prompt
         proposal_text = self._format_proposal(mapping_proposal)
         schema_text = self._format_schema(csv_schema)
 
         # Build the prompt — use a placeholder for the CSV path so that the
-        # generated RML is portable and can be deployed with different CSV sources.
+        # generated YARRRML is portable and can be deployed with different CSV sources.
         csv_delimiter = csv_schema.get("delimiter", ",")
         prompt = RML_GENERATION_PROMPT.format(
             base_uri=base_uri,
@@ -74,127 +72,77 @@ class RMLGenerator:
             csv_delimiter=csv_delimiter,
         )
 
-        logger.debug("Sending RML generation prompt to AI")
+        logger.debug("Sending YARRRML generation prompt to AI")
 
         try:
             response = self._ai_service.send_message(prompt)
             parsed = AIService.parse_response(response)
 
-            # Extract Turtle code blocks
-            turtle_blocks = parsed.get_turtle_blocks()
+            # Extract YAML code blocks
+            yaml_blocks = parsed.get_yaml_blocks()
 
-            if not turtle_blocks:
-                logger.warning("No Turtle code block found in AI response")
+            if not yaml_blocks:
+                logger.warning("No YAML code block found in AI response")
                 raise RMLGenerationError(
-                    "AI did not generate valid RML Turtle output. "
-                    "Response did not contain a turtle code block."
+                    "AI did not generate valid YARRRML output. "
+                    "Response did not contain a yaml code block."
                 )
 
-            rml_content = turtle_blocks[0]
-            rml_content = self.ensure_common_prefixes(rml_content)
-            logger.info(f"Generated RML with {len(rml_content)} characters")
+            rml_content = yaml_blocks[0]
+            logger.info(f"Generated YARRRML with {len(rml_content)} characters")
 
             return rml_content
 
         except RMLGenerationError:
             raise
         except Exception as e:
-            logger.error(f"Failed to generate RML: {e}")
-            raise RMLGenerationError(f"Failed to generate RML: {e}") from e
+            logger.error(f"Failed to generate YARRRML: {e}")
+            raise RMLGenerationError(f"Failed to generate YARRRML: {e}") from e
 
     def regenerate_with_error(self, error_message: str) -> str:
-        """Re-generate RML by sending the validation error back to the AI.
+        """Re-generate YARRRML by sending the validation error back to the AI.
 
-        The AI's conversation history already contains the previous RML output,
+        The AI's conversation history already contains the previous YARRRML output,
         so we only need to send the correction prompt with the error.
 
         Args:
             error_message: The validation error from Tier 1 syntax check.
 
         Returns:
-            Corrected RML in Turtle format.
+            Corrected YARRRML mapping.
 
         Raises:
-            RMLGenerationError: If regeneration fails or no valid RML is produced.
+            RMLGenerationError: If regeneration fails or no valid YARRRML is produced.
         """
-        logger.info("Regenerating RML with error context")
+        logger.info("Regenerating YARRRML with error context")
 
         prompt = RML_CORRECTION_PROMPT.format(error_message=error_message)
 
-        logger.debug("Sending RML correction prompt to AI")
+        logger.debug("Sending YARRRML correction prompt to AI")
 
         try:
             response = self._ai_service.send_message(prompt)
             parsed = AIService.parse_response(response)
 
-            turtle_blocks = parsed.get_turtle_blocks()
+            yaml_blocks = parsed.get_yaml_blocks()
 
-            if not turtle_blocks:
-                logger.warning("No Turtle code block found in AI correction response")
+            if not yaml_blocks:
+                logger.warning("No YAML code block found in AI correction response")
                 raise RMLGenerationError(
-                    "AI did not return corrected RML Turtle output. "
-                    "Response did not contain a turtle code block."
+                    "AI did not return corrected YARRRML output. "
+                    "Response did not contain a yaml code block."
                 )
 
-            rml_content = turtle_blocks[0]
-            rml_content = self.ensure_common_prefixes(rml_content)
-            logger.info(f"Regenerated RML with {len(rml_content)} characters")
+            rml_content = yaml_blocks[0]
+            logger.info(f"Regenerated YARRRML with {len(rml_content)} characters")
 
             return rml_content
 
         except RMLGenerationError:
             raise
         except Exception as e:
-            logger.error(f"Failed to regenerate RML: {e}")
-            raise RMLGenerationError(f"Failed to regenerate RML: {e}") from e
-
-    @staticmethod
-    def ensure_common_prefixes(turtle_content: str) -> str:
-        """Ensure well-known prefixes are declared if they are used.
-
-        Scans the Turtle content for usage of common prefixed names (e.g.
-        ``rdfs:label``) and prepends any missing ``@prefix`` declarations.
-
-        Args:
-            turtle_content: Raw Turtle content.
-
-        Returns:
-            Turtle content with missing prefix declarations prepended.
-        """
-        # Map of prefix -> IRI for well-known vocabularies
-        well_known = {
-            "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-            "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
-            "owl": "http://www.w3.org/2002/07/owl#",
-            "xsd": "http://www.w3.org/2001/XMLSchema#",
-            "skos": "http://www.w3.org/2004/02/skos/core#",
-            "dcterms": "http://purl.org/dc/terms/",
-            "schema": "http://schema.org/",
-            "foaf": "http://xmlns.com/foaf/0.1/",
-            "csvw": "http://www.w3.org/ns/csvw#",
-        }
-
-        missing: list[str] = []
-        for prefix, iri in well_known.items():
-            # Check if prefix is used (e.g. "rdfs:" appearing as a prefixed name)
-            usage_pattern = re.compile(rf'(?<![:\w]){re.escape(prefix)}:\w')
-            if not usage_pattern.search(turtle_content):
-                continue
-
-            # Check if it is already declared
-            decl_pattern = re.compile(
-                rf'@prefix\s+{re.escape(prefix)}\s*:', re.IGNORECASE
-            )
-            if decl_pattern.search(turtle_content):
-                continue
-
-            missing.append(f"@prefix {prefix}: <{iri}> .")
-
-        if missing:
-            logger.debug(f"Injecting missing prefixes: {missing}")
-            return "\n".join(missing) + "\n" + turtle_content
-
-        return turtle_content
+            logger.error(f"Failed to regenerate YARRRML: {e}")
+            raise RMLGenerationError(f"Failed to regenerate YARRRML: {e}") from e
 
     def _format_proposal(self, proposal: dict[str, Any]) -> str:
         """Format mapping proposal for AI prompt.
@@ -274,7 +222,7 @@ def generate_rml(
     csv_path: str,
     base_uri: str,
 ) -> str:
-    """Convenience function to generate RML mapping.
+    """Convenience function to generate YARRRML mapping.
 
     Args:
         ai_service: AI service instance.
@@ -284,7 +232,7 @@ def generate_rml(
         base_uri: Base URI for generated resources.
 
     Returns:
-        Generated RML in Turtle format.
+        Generated YARRRML mapping.
 
     Raises:
         RMLGenerationError: If generation fails.

@@ -100,7 +100,7 @@ class GitHubService:
         # Sanitize mapping name for use in branch and file names
         safe_name = self._sanitize_name(mapping_name)
         branch_name = f"mapping/{safe_name}"
-        file_path = f"{self.MAPPINGS_FOLDER}/{safe_name}/mapping.ttl"
+        file_path = f"{self.MAPPINGS_FOLDER}/{safe_name}/mapping.yarrrml.yaml"
 
         logger.info(f"Creating PR for mapping: {mapping_name}")
         logger.debug(f"Branch: {branch_name}, File: {file_path}")
@@ -114,8 +114,8 @@ class GitHubService:
             # Create new branch
             self._create_branch(branch_name, base_sha)
 
-            # Commit the RML file
-            commit_message = f"Add RML mapping: {mapping_name}"
+            # Commit the YARRRML mapping file
+            commit_message = f"Add YARRRML mapping: {mapping_name}"
             self._commit_file(branch_name, file_path, rml_content, commit_message)
 
             # Commit DCAT metadata file if provided

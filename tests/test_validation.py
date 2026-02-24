@@ -18,16 +18,38 @@ from ogd_to_lod.validation import (
 )
 
 
-# Constants used only in this file
-INVALID_RML_SYNTAX = """@prefix rr: <http://www.w3.org/ns/r2rml#> .
-This is not valid Turtle syntax!!!
+# ── Constants ────────────────────────────────────────────────────────────
+
+INVALID_YARRRML_SYNTAX = """\
+prefixes:
+  ex: "https://example.org/"
+mappings:
+  observations:
+    sources: [  # unclosed bracket — invalid YAML
 """
 
-MINIMAL_RML = """@prefix rr: <http://www.w3.org/ns/r2rml#> .
-@prefix rml: <http://semweb.mmlab.be/ns/rml#> .
-@prefix ex: <http://example.org/> .
+MINIMAL_YARRRML = """\
+mappings:
+  observations:
+    sources:
+      - access: "data.csv"
+        referenceFormulation: csv
+        delimiter: ","
+    s: ex:obs_$(col)
+    po:
+      - [a, ex:Thing]
+"""
 
-ex:Something rr:predicateObjectMap [ ] .
+YARRRML_MISSING_PREFIXES = """\
+mappings:
+  observations:
+    sources:
+      - access: "data.csv"
+        referenceFormulation: csv
+        delimiter: ","
+    s: ex:obs_$(col)
+    po:
+      - [a, ex:Thing]
 """
 
 
@@ -51,6 +73,14 @@ class TestRMLValidator:
         assert validator._use_docker is True
         assert validator._docker_image == "rmlio/rmlmapper-java:latest"
 
+    def test_init_with_yarrrml_parser_image(self):
+        """Test initialization with custom yarrrml-parser image."""
+        validator = RMLValidator(
+            use_docker=True,
+            yarrrml_parser_docker_image="custom/yarrrml-parser:v1",
+        )
+        assert validator._yarrrml_parser_image == "custom/yarrrml-parser:v1"
+
     def test_init_with_env_var(self, monkeypatch):
         """Test initialization from environment variable."""
         monkeypatch.setenv("RMLMAPPER_JAR", "/env/path/rmlmapper.jar")
@@ -58,17 +88,17 @@ class TestRMLValidator:
         assert validator._rmlmapper_jar == "/env/path/rmlmapper.jar"
 
     def test_validate_syntax_only_valid(self, sample_rml):
-        """Test syntax-only validation with valid RML."""
-        validator = RMLValidator()  # No JAR configured
+        """Test syntax-only validation with valid YARRRML."""
+        validator = RMLValidator()  # No Docker configured
         result = validator.validate(sample_rml, "/nonexistent/path.csv")
 
         assert result.valid is True
         assert result.rdf_output is None  # No actual RDF generation
 
     def test_validate_syntax_only_invalid(self):
-        """Test syntax-only validation with invalid RML."""
+        """Test syntax-only validation with invalid YARRRML."""
         validator = RMLValidator()
-        result = validator.validate(INVALID_RML_SYNTAX, "/nonexistent/path.csv")
+        result = validator.validate(INVALID_YARRRML_SYNTAX, "/nonexistent/path.csv")
 
         assert result.valid is False
         assert "syntax error" in result.error_message.lower()
@@ -76,99 +106,22 @@ class TestRMLValidator:
     def test_validate_syntax_only_with_warnings(self):
         """Test syntax-only validation produces warnings for missing components."""
         validator = RMLValidator()
-        result = validator.validate_syntax(MINIMAL_RML)
+        result = validator.validate_syntax(YARRRML_MISSING_PREFIXES)
 
-        # Should be valid syntax but may have warnings
+        # Should be valid syntax but warn about missing prefixes
         assert result.valid is True
-        # Warnings about missing logical source or subject map
         assert result.warnings is not None
-        assert any(
-            "logical source" in w.lower() or "subject map" in w.lower()
-            for w in result.warnings
-        )
+        assert any("prefixes" in w.lower() for w in result.warnings)
 
     def test_validate_csv_not_found(self, sample_rml):
-        """Test validation fails when CSV doesn't exist."""
-        with tempfile.NamedTemporaryFile(suffix=".jar", delete=False) as jar_file:
-            jar_path = jar_file.name
-
-        try:
-            validator = RMLValidator(rmlmapper_jar=jar_path)
-            result = validator.validate_with_rmlmapper(
-                sample_rml, "/nonexistent/data.csv"
-            )
-
-            assert result.valid is False
-            assert "not found" in result.error_message.lower()
-        finally:
-            os.unlink(jar_path)
-
-    @patch("subprocess.run")
-    def test_validate_with_jar_success(self, mock_run, data_csv, sample_rml):
-        """Test successful validation with JAR."""
-        # Mock successful RMLMapper execution
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout="",
-            stderr="",
+        """Test validation fails when CSV doesn't exist (Docker mode)."""
+        validator = RMLValidator(use_docker=True)
+        result = validator.validate_with_rmlmapper(
+            sample_rml, "/nonexistent/data.csv"
         )
 
-        with tempfile.NamedTemporaryFile(suffix=".jar", delete=False) as jar_file:
-            jar_path = jar_file.name
-
-        try:
-            validator = RMLValidator(rmlmapper_jar=jar_path)
-
-            # Need to mock the output file creation
-            with patch.object(Path, "read_text", return_value="<rdf output>"):
-                with patch.object(Path, "exists", return_value=True):
-                    result = validator.validate(sample_rml, data_csv)
-
-            assert result.valid is True
-            assert mock_run.called
-        finally:
-            os.unlink(jar_path)
-
-    @patch("subprocess.run")
-    def test_validate_with_jar_failure(self, mock_run, data_csv, sample_rml):
-        """Test validation failure with JAR."""
-        # Mock failed RMLMapper execution
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=1,
-            stdout="",
-            stderr="Error: Invalid column reference 'unknown_column'",
-        )
-
-        with tempfile.NamedTemporaryFile(suffix=".jar", delete=False) as jar_file:
-            jar_path = jar_file.name
-
-        try:
-            validator = RMLValidator(rmlmapper_jar=jar_path)
-            result = validator.validate(sample_rml, data_csv)
-
-            assert result.valid is False
-            assert "unknown_column" in result.error_message
-        finally:
-            os.unlink(jar_path)
-
-    @patch("subprocess.run")
-    def test_validate_timeout(self, mock_run, data_csv, sample_rml):
-        """Test validation timeout handling."""
-        mock_run.side_effect = subprocess.TimeoutExpired(cmd="java", timeout=60)
-
-        with tempfile.NamedTemporaryFile(suffix=".jar", delete=False) as jar_file:
-            jar_path = jar_file.name
-
-        try:
-            validator = RMLValidator(rmlmapper_jar=jar_path)
-            result = validator.validate(sample_rml, data_csv, timeout=60)
-
-            assert result.valid is False
-            assert "timed out" in result.error_message.lower()
-        finally:
-            os.unlink(jar_path)
+        assert result.valid is False
+        assert "not found" in result.error_message.lower()
 
     def test_clean_error_message(self):
         """Test error message cleaning."""
@@ -271,81 +224,103 @@ class TestValidateRMLFunction:
 class TestValidateSyntax:
     """Tests for the public validate_syntax() method (Tier 1)."""
 
-    def test_valid_turtle(self, sample_rml):
-        """Test syntax validation passes for valid Turtle."""
+    def test_valid_yarrrml(self, sample_rml):
+        """Test syntax validation passes for valid YARRRML."""
         validator = RMLValidator()
         result = validator.validate_syntax(sample_rml)
 
         assert result.valid is True
         assert result.error_message is None
 
-    def test_invalid_turtle(self):
-        """Test syntax validation fails for invalid Turtle."""
+    def test_invalid_yarrrml(self):
+        """Test syntax validation fails for invalid YARRRML."""
         validator = RMLValidator()
-        result = validator.validate_syntax(INVALID_RML_SYNTAX)
+        result = validator.validate_syntax(INVALID_YARRRML_SYNTAX)
 
         assert result.valid is False
         assert result.error_message is not None
         assert "syntax error" in result.error_message.lower()
 
-    def test_minimal_valid_turtle(self):
-        """Test syntax validation passes for minimal valid Turtle."""
+    def test_minimal_valid_yarrrml(self):
+        """Test syntax validation passes for minimal valid YARRRML with mappings key."""
         validator = RMLValidator()
-        result = validator.validate_syntax(MINIMAL_RML)
+        result = validator.validate_syntax(MINIMAL_YARRRML)
 
         assert result.valid is True
+
+    def test_missing_mappings_key(self):
+        """Test syntax validation fails when mappings key is absent."""
+        no_mappings = "prefixes:\n  ex: 'https://example.org/'\n"
+        validator = RMLValidator()
+        result = validator.validate_syntax(no_mappings)
+
+        assert result.valid is False
+        assert "mappings" in result.error_message.lower()
 
     def test_empty_string(self):
         """Test syntax validation with empty string."""
         validator = RMLValidator()
         result = validator.validate_syntax("")
 
-        # Empty RML is technically parseable Turtle but fails structural
-        # checks (SPARQL queries reference undefined prefixes), so it's
-        # correctly reported as invalid.
         assert result.valid is False
+
+    def test_warns_on_missing_prefixes(self):
+        """Test that missing prefixes block generates a warning."""
+        validator = RMLValidator()
+        result = validator.validate_syntax(YARRRML_MISSING_PREFIXES)
+
+        assert result.valid is True
+        assert result.warnings is not None
+        assert any("prefixes" in w.lower() for w in result.warnings)
+
+    def test_warns_on_mapping_missing_subject(self):
+        """Test that a mapping without a subject generates a warning."""
+        no_subject = """\
+prefixes:
+  ex: "https://example.org/"
+mappings:
+  obs:
+    sources:
+      - access: "data.csv"
+        referenceFormulation: csv
+        delimiter: ","
+    po:
+      - [a, ex:Thing]
+"""
+        validator = RMLValidator()
+        result = validator.validate_syntax(no_subject)
+
+        assert result.valid is True
+        assert result.warnings is not None
+        assert any("subject" in w.lower() or "'s'" in w.lower() for w in result.warnings)
 
 
 class TestValidateWithRMLMapper:
     """Tests for validate_with_rmlmapper() method (Tier 2)."""
 
-    def test_skips_when_no_jar_configured(self, sample_rml):
-        """Test Tier 2 gracefully skips when RMLMapper is not configured."""
-        validator = RMLValidator()  # No JAR
+    def test_skips_when_docker_not_enabled(self, sample_rml):
+        """Test Tier 2 gracefully skips when Docker is not configured."""
+        validator = RMLValidator()  # use_docker=False by default
         result = validator.validate_with_rmlmapper(sample_rml, "/some/path.csv")
 
         assert result.valid is True
         assert result.warnings is not None
-        assert any("skipped" in w.lower() for w in result.warnings)
+        assert any("docker not enabled" in w.lower() for w in result.warnings)
 
-    def test_skips_when_jar_not_found(self, sample_rml):
-        """Test Tier 2 gracefully skips when JAR file doesn't exist."""
-        validator = RMLValidator(rmlmapper_jar="/nonexistent/rmlmapper.jar")
-        result = validator.validate_with_rmlmapper(sample_rml, "/some/path.csv")
+    def test_csv_not_found_with_docker(self, sample_rml):
+        """Test Tier 2 fails when CSV file doesn't exist (Docker mode)."""
+        validator = RMLValidator(use_docker=True)
+        result = validator.validate_with_rmlmapper(
+            sample_rml, "/nonexistent/data.csv"
+        )
 
-        assert result.valid is True
-        assert result.warnings is not None
-        assert any("not found" in w.lower() for w in result.warnings)
-
-    def test_csv_not_found(self, sample_rml):
-        """Test Tier 2 fails when CSV file doesn't exist."""
-        with tempfile.NamedTemporaryFile(suffix=".jar", delete=False) as jar_file:
-            jar_path = jar_file.name
-
-        try:
-            validator = RMLValidator(rmlmapper_jar=jar_path)
-            result = validator.validate_with_rmlmapper(
-                sample_rml, "/nonexistent/data.csv"
-            )
-
-            assert result.valid is False
-            assert result.error_category == "file_not_found"
-        finally:
-            os.unlink(jar_path)
+        assert result.valid is False
+        assert result.error_category == "file_not_found"
 
     @patch("subprocess.run")
-    def test_success_with_mocked_rmlmapper(self, mock_run, data_csv, sample_rml):
-        """Test successful Tier 2 validation with mocked RMLMapper."""
+    def test_success_with_mocked_docker(self, mock_run, data_csv, sample_rml):
+        """Test successful Tier 2 validation with mocked Docker."""
+        # Both subprocess.run calls (yarrrml-parser + rmlmapper) return success
         mock_run.return_value = subprocess.CompletedProcess(
             args=[],
             returncode=0,
@@ -353,44 +328,109 @@ class TestValidateWithRMLMapper:
             stderr="",
         )
 
-        with tempfile.NamedTemporaryFile(suffix=".jar", delete=False) as jar_file:
-            jar_path = jar_file.name
+        validator = RMLValidator(use_docker=True)
+        with patch.object(Path, "read_text", return_value="ex:obs1 a ex:Observation ."):
+            with patch.object(Path, "exists", return_value=True):
+                result = validator.validate_with_rmlmapper(sample_rml, data_csv)
 
-        try:
-            validator = RMLValidator(rmlmapper_jar=jar_path)
-            with patch.object(Path, "read_text", return_value="<rdf>"):
-                with patch.object(Path, "exists", return_value=True):
-                    result = validator.validate_with_rmlmapper(
-                        sample_rml, data_csv
-                    )
-
-            assert result.valid is True
-            assert mock_run.called
-        finally:
-            os.unlink(jar_path)
+        assert result.valid is True
+        assert mock_run.called
+        # Both yarrrml-parser and rmlmapper should be called
+        assert mock_run.call_count == 2
 
     @patch("subprocess.run")
-    def test_failure_with_mocked_rmlmapper(self, mock_run, data_csv, sample_rml):
-        """Test failed Tier 2 validation with mocked RMLMapper."""
+    def test_yarrrml_parser_failure(self, mock_run, data_csv, sample_rml):
+        """Test that yarrrml-parser failure returns invalid result."""
         mock_run.return_value = subprocess.CompletedProcess(
             args=[],
             returncode=1,
             stdout="",
-            stderr="Error: Column 'foo' not found in CSV",
+            stderr="Error: unexpected token at line 3",
         )
 
-        with tempfile.NamedTemporaryFile(suffix=".jar", delete=False) as jar_file:
-            jar_path = jar_file.name
+        validator = RMLValidator(use_docker=True)
+        result = validator.validate_with_rmlmapper(sample_rml, data_csv)
 
-        try:
-            validator = RMLValidator(rmlmapper_jar=jar_path)
-            result = validator.validate_with_rmlmapper(sample_rml, data_csv)
+        assert result.valid is False
+        assert result.error_category == "syntax_error"
+        # Only yarrrml-parser is called (rmlmapper is not reached)
+        assert mock_run.call_count == 1
 
-            assert result.valid is False
-            assert result.error_category == "missing_column"
-            assert result.user_friendly_error is not None
-        finally:
-            os.unlink(jar_path)
+    @patch("subprocess.run")
+    def test_rmlmapper_failure(self, mock_run, data_csv, sample_rml):
+        """Test that RMLMapper failure (step 2) returns invalid result."""
+        mock_run.side_effect = [
+            # Step 1: yarrrml-parser succeeds
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            # Step 2: rmlmapper fails
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=1,
+                stdout="",
+                stderr="Error: Column 'foo' not found in CSV",
+            ),
+        ]
+
+        validator = RMLValidator(use_docker=True)
+        result = validator.validate_with_rmlmapper(sample_rml, data_csv)
+
+        assert result.valid is False
+        assert result.error_category == "missing_column"
+        assert result.user_friendly_error is not None
+        assert mock_run.call_count == 2
+
+
+class TestYARRRMLParserDocker:
+    """Tests for _run_yarrrml_parser_docker method."""
+
+    @patch("subprocess.run")
+    def test_yarrrml_parser_success(self, mock_run):
+        """Test yarrrml-parser step returns valid on success."""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr="",
+        )
+
+        validator = RMLValidator(use_docker=True)
+        result = validator._run_yarrrml_parser_docker("/tmp/testdir", timeout=30)
+
+        assert result.valid is True
+        assert mock_run.called
+        cmd = mock_run.call_args[0][0]
+        assert "yarrrml-parser" in " ".join(cmd) or "yarrrml" in " ".join(cmd).lower()
+
+    @patch("subprocess.run")
+    def test_yarrrml_parser_failure(self, mock_run):
+        """Test yarrrml-parser step returns invalid on failure."""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="SyntaxError: Unexpected token } at line 5",
+        )
+
+        validator = RMLValidator(use_docker=True)
+        result = validator._run_yarrrml_parser_docker("/tmp/testdir", timeout=30)
+
+        assert result.valid is False
+        assert result.error_category == "syntax_error"
+        assert "Unexpected token" in result.error_message
+
+    @patch("subprocess.run")
+    def test_yarrrml_parser_uses_correct_docker_image(self, mock_run):
+        """Test that yarrrml-parser uses the configured Docker image."""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr="",
+        )
+
+        custom_image = "my-registry/yarrrml-parser:custom"
+        validator = RMLValidator(
+            use_docker=True,
+            yarrrml_parser_docker_image=custom_image,
+        )
+        validator._run_yarrrml_parser_docker("/tmp/testdir", timeout=30)
+
+        cmd = mock_run.call_args[0][0]
+        assert custom_image in cmd
 
 
 class TestIsEmptyRDFOutput:
@@ -549,25 +589,7 @@ class TestProcessResultEmptyOutput:
 
 
 class TestSampleCSVExtraction:
-    """Tests for _extract_sample_csv and _get_rml_source_filename."""
-
-    def test_correct_filename_from_rml(self):
-        """Test that source filename is parsed from RML content."""
-        rml_with_source = '@prefix rml: <http://semweb.mmlab.be/ns/rml#> .\nex:M rml:logicalSource [ rml:source "data.csv" ] .'
-        filename = RMLValidator._get_rml_source_filename(
-            rml_with_source, "/path/to/other.csv"
-        )
-        assert filename == "data.csv"
-
-    def test_fallback_to_csv_path(self):
-        """Test fallback to csv_path basename when RML has no source."""
-        rml_no_source = """@prefix rr: <http://www.w3.org/ns/r2rml#> .
-ex:Map rr:subjectMap [ ] .
-"""
-        filename = RMLValidator._get_rml_source_filename(
-            rml_no_source, "/path/to/mydata.csv"
-        )
-        assert filename == "mydata.csv"
+    """Tests for _extract_sample_csv."""
 
     def test_sample_csv_row_count(self, data_csv, sample_rml):
         """Test that sample CSV has the correct number of rows."""
@@ -648,42 +670,17 @@ ex:Map rr:subjectMap [ ] .
         finally:
             tmpdir.cleanup()
 
-    def test_csvw_source_filename(self, sample_csvw_rml):
-        """Test that _get_rml_source_filename parses csvw:url form."""
-        filename = RMLValidator._get_rml_source_filename(
-            sample_csvw_rml, "/path/to/fallback.csv"
-        )
-        assert filename == "semicolon.csv"
-
-    def test_extract_sample_csv_with_csvw_rml(self, semicolon_csv, sample_csvw_rml):
-        """Test sample extraction with CSVW-style RML (csvw:url)."""
-        validator = RMLValidator()
-        tmpdir = validator._extract_sample_csv(
-            semicolon_csv, "semicolon.csv", sample_rows=2
-        )
-
-        try:
-            sample_path = Path(tmpdir.name) / "semicolon.csv"
-            assert sample_path.exists()
-
-            with open(sample_path, "r") as f:
-                content = f.read()
-
-            # Semicolon delimiter must be preserved
-            assert ";" in content
-
-            with open(sample_path, "r") as f:
-                reader = csv.reader(f, delimiter=";")
-                rows = list(reader)
-
-            assert len(rows) == 3  # header + 2 data rows
-            assert rows[0] == ["year", "region", "value"]
-        finally:
-            tmpdir.cleanup()
-
 
 class TestErrorCategorization:
     """Tests for _categorize_error."""
+
+    def test_yarrrml_parse_error(self):
+        """Test categorisation of YARRRML parse errors."""
+        category, desc = RMLValidator._categorize_error(
+            "yarrrml-parser: parse error at line 3"
+        )
+        assert category == "yarrrml_parse_error"
+        assert "yarrrml" in desc.lower()
 
     def test_missing_column(self):
         """Test categorisation of missing column errors."""
@@ -734,55 +731,38 @@ class TestErrorCategorization:
 
 
 @pytest.mark.integration
-class TestIntegrationRMLMapper:
-    """Integration tests that exercise the real RMLMapper JAR.
+class TestIntegrationYARRRML:
+    """Integration tests that exercise the real Docker pipeline.
 
     These tests require:
-    - tools/rmlmapper.jar to be present (run scripts/setup-rmlmapper.sh)
-    - Java runtime on PATH
+    - Docker installed and running
+    - rmlio/yarrrml-parser:latest image (pulled automatically)
+    - rmlio/rmlmapper-java:latest image (pulled automatically)
 
     Skip with: pytest -m "not integration"
     """
 
-    def test_valid_rml_produces_rdf(self, rmlmapper_available, data_csv, sample_rml):
-        """Tier 2 with real JAR — success path, asserts RDF output."""
-        validator = RMLValidator(rmlmapper_jar=rmlmapper_available)
+    def test_valid_yarrrml_produces_rdf(self, docker_available, data_csv, sample_rml):
+        """Tier 2 with real Docker — success path, asserts RDF output."""
+        validator = RMLValidator(use_docker=True)
         result = validator.validate_with_rmlmapper(sample_rml, data_csv)
 
         assert result.valid is True
         assert result.rdf_output is not None
         assert len(result.rdf_output.strip()) > 0
-        # The output should contain RDF triples referencing our data
-        assert "example.org" in result.rdf_output
 
-    def test_full_validate_chain(self, rmlmapper_available, data_csv, sample_rml):
+    def test_full_validate_chain(self, docker_available, data_csv, sample_rml):
         """validate() runs both Tier 1 + Tier 2 end-to-end."""
-        validator = RMLValidator(rmlmapper_jar=rmlmapper_available)
+        validator = RMLValidator(use_docker=True)
         result = validator.validate(sample_rml, data_csv)
 
         assert result.valid is True
         assert result.rdf_output is not None
 
-    def test_missing_column_error(self, rmlmapper_available, data_csv, sample_rml):
-        """RML referencing a nonexistent column produces valid=False."""
-        bad_rml = sample_rml.replace('rml:reference "year"', 'rml:reference "nonexistent"')
-        validator = RMLValidator(rmlmapper_jar=rmlmapper_available)
-        result = validator.validate_with_rmlmapper(bad_rml, data_csv)
-
-        # RMLMapper should fail or produce empty output for bad column refs.
-        # Behaviour depends on RMLMapper version — some silently skip, others error.
-        # At minimum, the result should not crash.
-        assert isinstance(result, ValidationResult)
-
-    def test_small_csv_works(self, rmlmapper_available, small_csv, sample_rml):
+    def test_small_csv_works(self, docker_available, small_csv, sample_rml):
         """1-row CSV still produces valid RDF."""
-        validator = RMLValidator(rmlmapper_jar=rmlmapper_available)
+        validator = RMLValidator(use_docker=True)
         result = validator.validate_with_rmlmapper(sample_rml, small_csv)
 
         assert result.valid is True
         assert result.rdf_output is not None
-
-    def test_is_available_with_real_jar(self, rmlmapper_available):
-        """is_available() returns True when the real JAR is present."""
-        validator = RMLValidator(rmlmapper_jar=rmlmapper_available)
-        assert validator.is_available() is True

@@ -202,10 +202,12 @@ class MappingFlow:
         # Get RMLMapper configuration from config
         rmlmapper_jar = self._config.rml.rmlmapper_jar
         use_docker = self._config.rml.rmlmapper_use_docker
+        yarrrml_parser_image = self._config.rml.yarrrml_parser_docker_image
         self._state = validate_node(
             self._state,
             rmlmapper_jar=rmlmapper_jar,
             use_docker=use_docker,
+            yarrrml_parser_docker_image=yarrrml_parser_image,
         )
         return self._state.to_dict()
 
@@ -423,6 +425,7 @@ class MappingFlow:
                         self._state,
                         rmlmapper_jar=self._config.rml.rmlmapper_jar,
                         use_docker=self._config.rml.rmlmapper_use_docker,
+                        yarrrml_parser_docker_image=self._config.rml.yarrrml_parser_docker_image,
                     )
 
                 # If all validation passed, move to CONFIRM_NAME

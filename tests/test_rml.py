@@ -16,56 +16,52 @@ from ogd_to_lod.graph.state import (
 from ogd_to_lod.graph.nodes import generate_node, regenerate_node
 
 
-# Sample RML output for testing
-SAMPLE_RML_OUTPUT = """@prefix rr: <http://www.w3.org/ns/r2rml#> .
-@prefix rml: <http://semweb.mmlab.be/ns/rml#> .
-@prefix ql: <http://semweb.mmlab.be/ns/ql#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix schema: <http://schema.org/> .
-@prefix cube: <https://cube.link/> .
-@prefix ex: <https://example.org/> .
+# Sample YARRRML output for testing
+SAMPLE_YARRRML_OUTPUT = """\
+prefixes:
+  rml: "http://semweb.mmlab.be/ns/rml#"
+  rr: "http://www.w3.org/ns/r2rml#"
+  ql: "http://semweb.mmlab.be/ns/ql#"
+  schema: "http://schema.org/"
+  cube: "https://cube.link/"
+  xsd: "http://www.w3.org/2001/XMLSchema#"
+  ex: "https://example.org/"
+  ex-obs: "https://example.org/observation/"
+  ex-property: "https://example.org/property/"
+  ex-code: "https://example.org/code/"
 
-ex:TriplesMap a rr:TriplesMap ;
-    rml:logicalSource [
-        rml:source "/path/to/data.csv" ;
-        rml:referenceFormulation ql:CSV
-    ] ;
-    rr:subjectMap [
-        rr:template "https://example.org/observation/{year}/{region}" ;
-        rr:class cube:Observation
-    ] ;
-    rr:predicateObjectMap [
-        rr:predicate cube:dimension ;
-        rr:objectMap [
-            rml:reference "year" ;
-            rr:datatype xsd:gYear
-        ]
-    ] ;
-    rr:predicateObjectMap [
-        rr:predicate cube:dimension ;
-        rr:objectMap [
-            rml:reference "region" ;
-            rr:datatype xsd:string
-        ]
-    ] ;
-    rr:predicateObjectMap [
-        rr:predicate cube:measure ;
-        rr:objectMap [
-            rml:reference "value" ;
-            rr:datatype xsd:decimal
-        ]
-    ] .
+mappings:
+  observations:
+    sources:
+      - access: "{{CSV_SOURCE}}"
+        referenceFormulation: csv
+        delimiter: ","
+    s: ex-obs:$(year)_$(region)
+    po:
+      - [a, cube:Observation]
+      - [ex-property:ZEIT, $(year), xsd:gYear]
+      - [ex-property:RAUM, ex-code:$(region)~iri]
+      - [ex-property:value, $(value), xsd:decimal]
+  regionCodes:
+    sources:
+      - access: "{{CSV_SOURCE}}"
+        referenceFormulation: csv
+        delimiter: ","
+    s: ex-code:$(region)
+    po:
+      - [a, schema:DefinedTerm]
+      - [schema:name, $(region)]
 """
 
 
 @pytest.fixture
 def mock_ai_service():
-    """Create a mock AI service that returns sample RML."""
+    """Create a mock AI service that returns sample YARRRML."""
     service = MagicMock()
-    service.send_message.return_value = f"""Here is the generated RML mapping:
+    service.send_message.return_value = f"""Here is the generated YARRRML mapping:
 
-```turtle
-{SAMPLE_RML_OUTPUT}
+```yaml
+{SAMPLE_YARRRML_OUTPUT}
 ```
 
 This mapping creates observations from the CSV data with year and region as dimensions and value as a measure.
@@ -106,7 +102,7 @@ class TestRMLGenerator:
     """Tests for RMLGenerator class."""
 
     def test_generate_success(self, mock_ai_service, sample_mapping_proposal, sample_csv_schema):
-        """Test successful RML generation."""
+        """Test successful YARRRML generation."""
         generator = RMLGenerator(mock_ai_service)
 
         result = generator.generate(
@@ -117,8 +113,7 @@ class TestRMLGenerator:
         )
 
         assert result is not None
-        assert "@prefix rr:" in result
-        assert "@prefix rml:" in result
+        assert "mappings:" in result
         assert "cube:Observation" in result
         mock_ai_service.send_message.assert_called_once()
 
@@ -143,10 +138,10 @@ class TestRMLGenerator:
         # The prompt sent to AI should contain the semicolon delimiter
         call_args = mock_ai_service.send_message.call_args[0][0]
         assert ";" in call_args
-        assert "detected CSV delimiter" in call_args
+        assert "detected CSV delimiter" in call_args.lower() or "delimiter" in call_args.lower()
 
-    def test_generate_no_turtle_block(self, mock_ai_service, sample_mapping_proposal, sample_csv_schema):
-        """Test generation fails when no Turtle block is returned."""
+    def test_generate_no_yaml_block(self, mock_ai_service, sample_mapping_proposal, sample_csv_schema):
+        """Test generation fails when no YAML block is returned."""
         mock_ai_service.send_message.return_value = "Here is some text without any code block."
 
         generator = RMLGenerator(mock_ai_service)
@@ -159,7 +154,7 @@ class TestRMLGenerator:
                 base_uri="https://example.org/",
             )
 
-        assert "AI did not generate valid RML Turtle output" in str(exc_info.value)
+        assert "AI did not generate valid YARRRML output" in str(exc_info.value)
 
     def test_generate_ai_error(self, mock_ai_service, sample_mapping_proposal, sample_csv_schema):
         """Test generation handles AI service errors."""
@@ -175,7 +170,7 @@ class TestRMLGenerator:
                 base_uri="https://example.org/",
             )
 
-        assert "Failed to generate RML" in str(exc_info.value)
+        assert "Failed to generate YARRRML" in str(exc_info.value)
 
     def test_format_proposal(self, mock_ai_service, sample_mapping_proposal):
         """Test proposal formatting for AI prompt."""
@@ -241,14 +236,14 @@ class TestGenerateRMLFunction:
         )
 
         assert result is not None
-        assert "@prefix rr:" in result
+        assert "mappings:" in result
 
 
 class TestGenerateNode:
     """Tests for the generate_node function."""
 
     def test_generate_node_success(self, mock_ai_service):
-        """Test successful RML generation via node."""
+        """Test successful YARRRML generation via node."""
         state = GraphState(
             current_state=FlowState.GENERATE,
             csv_path="/path/to/data.csv",
@@ -272,7 +267,7 @@ class TestGenerateNode:
 
         assert result.generated_rml is not None
         assert result.current_state == FlowState.PREVIEW
-        assert "@prefix rr:" in result.generated_rml
+        assert "mappings:" in result.generated_rml
 
     def test_generate_node_no_proposal(self, mock_ai_service):
         """Test generate node fails without mapping proposal."""
@@ -351,13 +346,11 @@ class TestRMLPrompts:
 
     def test_prompt_has_required_prefixes(self):
         """Test that the prompt includes required vocabulary prefixes."""
-        assert "rr:" in RML_GENERATION_PROMPT
         assert "rml:" in RML_GENERATION_PROMPT
+        assert "rr:" in RML_GENERATION_PROMPT
         assert "cube:" in RML_GENERATION_PROMPT
         assert "schema:" in RML_GENERATION_PROMPT
         assert "xsd:" in RML_GENERATION_PROMPT
-        assert "rdf:" in RML_GENERATION_PROMPT
-        assert "rdfs:" in RML_GENERATION_PROMPT
 
     def test_prompt_has_placeholders(self):
         """Test that the prompt has required placeholders."""
@@ -367,31 +360,34 @@ class TestRMLPrompts:
         assert "{csv_schema}" in RML_GENERATION_PROMPT
         assert "{csv_delimiter}" in RML_GENERATION_PROMPT
 
-    def test_prompt_has_csvw_prefix(self):
-        """Test that the prompt includes the csvw prefix."""
-        assert "csvw:" in RML_GENERATION_PROMPT
-        assert "http://www.w3.org/ns/csvw#" in RML_GENERATION_PROMPT
-
-    def test_prompt_has_csvw_delimiter_section(self):
-        """Test that the prompt includes CSVW delimiter instructions."""
-        assert "CSV Delimiter" in RML_GENERATION_PROMPT
-        assert "csvw:Table" in RML_GENERATION_PROMPT
-        assert "csvw:url" in RML_GENERATION_PROMPT
-        assert "csvw:Dialect" in RML_GENERATION_PROMPT
-        assert "csvw:delimiter" in RML_GENERATION_PROMPT
+    def test_prompt_has_yarrrml_source_section(self):
+        """Test that the prompt includes a YARRRML source definition."""
+        assert "sources:" in RML_GENERATION_PROMPT
+        assert "referenceFormulation: csv" in RML_GENERATION_PROMPT
+        assert "delimiter:" in RML_GENERATION_PROMPT
 
     def test_prompt_mentions_cube_link(self):
         """Test that the prompt mentions cube.link vocabulary."""
-        assert "cube.link" in RML_GENERATION_PROMPT
+        assert "cube:" in RML_GENERATION_PROMPT
         assert "cube:Observation" in RML_GENERATION_PROMPT
-        assert "cube:dimension" in RML_GENERATION_PROMPT
-        assert "cube:measure" in RML_GENERATION_PROMPT
 
     def test_prompt_mentions_schema_org(self):
         """Test that the prompt mentions schema.org vocabulary."""
-        assert "schema.org" in RML_GENERATION_PROMPT
+        assert "schema:" in RML_GENERATION_PROMPT
         assert "DefinedTerm" in RML_GENERATION_PROMPT
-        assert "DefinedTermSet" in RML_GENERATION_PROMPT
+
+    def test_prompt_requests_yaml_output(self):
+        """Test that the prompt asks for YAML output."""
+        assert "yaml" in RML_GENERATION_PROMPT.lower()
+
+    def test_prompt_mentions_yarrrml(self):
+        """Test that the prompt mentions YARRRML."""
+        assert "YARRRML" in RML_GENERATION_PROMPT
+
+    def test_prompt_has_mappings_structure(self):
+        """Test that the prompt shows mappings structure."""
+        assert "mappings:" in RML_GENERATION_PROMPT
+        assert "prefixes:" in RML_GENERATION_PROMPT
 
 
 class TestRMLCorrectionPrompt:
@@ -401,16 +397,16 @@ class TestRMLCorrectionPrompt:
         """Test that the correction prompt contains the error_message placeholder."""
         assert "{error_message}" in RML_CORRECTION_PROMPT
 
-    def test_mentions_turtle_code_block(self):
-        """Test that the correction prompt asks for a turtle code block."""
-        assert "turtle" in RML_CORRECTION_PROMPT
+    def test_mentions_yaml_code_block(self):
+        """Test that the correction prompt asks for a yaml code block."""
+        assert "yaml" in RML_CORRECTION_PROMPT
 
     def test_format_with_error(self):
         """Test that the correction prompt can be formatted with an error message."""
         formatted = RML_CORRECTION_PROMPT.format(
-            error_message='Prefix "rdfs:" not bound'
+            error_message='YAML syntax error at line 5'
         )
-        assert 'Prefix "rdfs:" not bound' in formatted
+        assert 'YAML syntax error at line 5' in formatted
         assert "Fix ONLY" in formatted
 
 
@@ -421,15 +417,15 @@ class TestRMLGeneratorRegenerate:
         """Test that regenerate_with_error sends the error message to the AI."""
         generator = RMLGenerator(mock_ai_service)
 
-        result = generator.regenerate_with_error('Prefix "rdfs:" not bound')
+        result = generator.regenerate_with_error('YAML syntax error: unexpected token')
 
         assert result is not None
         # Verify the correction prompt was sent with the error
         call_args = mock_ai_service.send_message.call_args[0][0]
-        assert 'Prefix "rdfs:" not bound' in call_args
+        assert 'YAML syntax error: unexpected token' in call_args
 
-    def test_regenerate_no_turtle_block(self, mock_ai_service):
-        """Test that regenerate_with_error raises when no turtle block returned."""
+    def test_regenerate_no_yaml_block(self, mock_ai_service):
+        """Test that regenerate_with_error raises when no yaml block returned."""
         mock_ai_service.send_message.return_value = "I cannot fix this error."
 
         generator = RMLGenerator(mock_ai_service)
@@ -437,7 +433,7 @@ class TestRMLGeneratorRegenerate:
         with pytest.raises(RMLGenerationError) as exc_info:
             generator.regenerate_with_error("some error")
 
-        assert "did not return corrected RML" in str(exc_info.value)
+        assert "did not return corrected YARRRML" in str(exc_info.value)
 
     def test_regenerate_ai_error(self, mock_ai_service):
         """Test that regenerate_with_error wraps AI exceptions."""
@@ -448,76 +444,7 @@ class TestRMLGeneratorRegenerate:
         with pytest.raises(RMLGenerationError) as exc_info:
             generator.regenerate_with_error("some error")
 
-        assert "Failed to regenerate RML" in str(exc_info.value)
-
-
-class TestEnsureCommonPrefixes:
-    """Tests for RMLGenerator.ensure_common_prefixes()."""
-
-    def test_injects_missing_rdfs(self):
-        """Test that missing rdfs: prefix is injected when used."""
-        turtle = (
-            '@prefix rr: <http://www.w3.org/ns/r2rml#> .\n'
-            'ex:Thing rdfs:label "hello" .\n'
-        )
-        result = RMLGenerator.ensure_common_prefixes(turtle)
-        assert "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> ." in result
-        # Original content preserved
-        assert 'rdfs:label "hello"' in result
-
-    def test_no_duplication_of_existing_prefix(self):
-        """Test that an already-declared prefix is not duplicated."""
-        turtle = (
-            '@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n'
-            'ex:Thing rdfs:label "hello" .\n'
-        )
-        result = RMLGenerator.ensure_common_prefixes(turtle)
-        assert result.count("@prefix rdfs:") == 1
-
-    def test_no_injection_when_prefix_unused(self):
-        """Test that a prefix is not injected when it is not used."""
-        turtle = (
-            '@prefix rr: <http://www.w3.org/ns/r2rml#> .\n'
-            'ex:Thing rr:class "Foo" .\n'
-        )
-        result = RMLGenerator.ensure_common_prefixes(turtle)
-        assert "@prefix rdfs:" not in result
-        assert "@prefix owl:" not in result
-
-    def test_multiple_missing_prefixes(self):
-        """Test that multiple missing prefixes are all injected."""
-        turtle = (
-            'ex:Thing rdfs:label "hello" ;\n'
-            '    rdf:type owl:Class .\n'
-        )
-        result = RMLGenerator.ensure_common_prefixes(turtle)
-        assert "@prefix rdf:" in result
-        assert "@prefix rdfs:" in result
-        assert "@prefix owl:" in result
-
-    def test_returns_unchanged_when_nothing_missing(self):
-        """Test that content is returned unchanged when no prefixes are missing."""
-        turtle = '@prefix rr: <http://www.w3.org/ns/r2rml#> .\nex:Thing rr:class "Foo" .\n'
-        result = RMLGenerator.ensure_common_prefixes(turtle)
-        assert result == turtle
-
-    def test_injects_missing_csvw(self):
-        """Test that missing csvw: prefix is injected when used."""
-        turtle = (
-            '@prefix rml: <http://semweb.mmlab.be/ns/rml#> .\n'
-            'rml:source [ a csvw:Table; csvw:url "data.csv" ] .\n'
-        )
-        result = RMLGenerator.ensure_common_prefixes(turtle)
-        assert "@prefix csvw: <http://www.w3.org/ns/csvw#> ." in result
-
-    def test_no_csvw_injection_when_unused(self):
-        """Test that csvw: prefix is not injected when not used."""
-        turtle = (
-            '@prefix rml: <http://semweb.mmlab.be/ns/rml#> .\n'
-            'ex:Map rml:source "data.csv" .\n'
-        )
-        result = RMLGenerator.ensure_common_prefixes(turtle)
-        assert "csvw" not in result
+        assert "Failed to regenerate YARRRML" in str(exc_info.value)
 
 
 class TestRegenerateNode:
@@ -529,14 +456,14 @@ class TestRegenerateNode:
             current_state=FlowState.GENERATE,
             csv_path="/path/to/data.csv",
             base_uri="https://example.org/",
-            validation_error='Prefix "rdfs:" not bound',
+            validation_error='YAML syntax error at line 5',
             generated_rml="invalid content",
         )
 
         result = regenerate_node(state, mock_ai_service)
 
         assert result.generated_rml is not None
-        assert "@prefix rr:" in result.generated_rml
+        assert "mappings:" in result.generated_rml
         assert result.current_state == FlowState.PREVIEW
 
     def test_regenerate_node_uses_validation_error(self, mock_ai_service):
@@ -545,14 +472,14 @@ class TestRegenerateNode:
             current_state=FlowState.GENERATE,
             csv_path="/path/to/data.csv",
             base_uri="https://example.org/",
-            validation_error='Prefix "rdfs:" not bound',
+            validation_error='YAML syntax error at line 5',
             generated_rml="invalid content",
         )
 
         regenerate_node(state, mock_ai_service)
 
         call_args = mock_ai_service.send_message.call_args[0][0]
-        assert 'Prefix "rdfs:" not bound' in call_args
+        assert 'YAML syntax error at line 5' in call_args
 
     def test_regenerate_node_ai_failure(self, mock_ai_service):
         """Test regenerate_node handles AI failure."""

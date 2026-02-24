@@ -38,7 +38,7 @@ Guidelines:
 Response format:
 - Use markdown for explanations
 - Put structured data (mapping proposals) in fenced YAML code blocks
-- Put RML output in fenced Turtle code blocks"""
+- Put YARRRML mappings in fenced YAML code blocks"""
 
 
 @dataclass
