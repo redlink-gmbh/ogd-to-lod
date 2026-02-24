@@ -98,7 +98,6 @@ ogd-to-lod <csv_path> <dcat_path>
 ### Options
 
 - `--config`, `-c`: Path to configuration file (default: `config/config.yaml`)
-- `--output`, `-o`: Path to save the generated YARRRML mapping (YAML format)
 - `--base-uri`, `-b`: Base URI for generated resources (overrides config)
 - `--help`: Show help message
 
