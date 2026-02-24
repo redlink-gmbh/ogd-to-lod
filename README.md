@@ -1,27 +1,22 @@
 # OGD to LOD
 
-Tool to create RML (RDF Mapping Language) mappings for CSV files using generative AI.
+Tool to create YARRRML (YAML-based RML) mappings for CSV files using generative AI.
 
 ## Overview
 
 This tool helps transform Open Government Data (OGD) CSV files into Linked Open Data (LOD) by:
 
 1. Analyzing CSV structure and DCAT metadata
-2. Using AI to propose RML mappings targeting cube.link and schema.org vocabularies
-3. Validating mappings with RMLMapper (two-tier: syntax check + data-aware execution)
-4. Creating GitHub PRs with the generated mappings
+2. Using AI to propose YARRRML mappings targeting cube.link and schema.org vocabularies
+3. Validating mappings with a two-tier pipeline (YAML syntax check + Docker-based execution)
+4. Creating GitHub PRs with the generated `mapping.yarrrml.yaml` files
 
 ## Installation
 
 ### Prerequisites
 
 - Python 3.11+
-- Java (optional, for RMLMapper validation)
-
-To set up RMLMapper for full validation:
-```bash
-./scripts/setup-rmlmapper.sh
-```
+- Docker (for full two-tier validation with yarrrml-parser and RMLMapper)
 
 ### Setup
 
@@ -61,7 +56,7 @@ The application uses a YAML configuration file (`config/config.yaml`) with envir
 
 | Variable | Description |
 |----------|-------------|
-| `GITHUB_TOKEN` | GitHub Personal Access Token with `repo` scope |
+| `APP_GITHUB_TOKEN` | GitHub Personal Access Token with `repo` scope |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL |
 | `AZURE_OPENAI_KEY` | Azure OpenAI API key |
 
@@ -70,7 +65,6 @@ The application uses a YAML configuration file (`config/config.yaml`) with envir
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `GITHUB_REPO` | Target repository for generated mappings | `redlink-gmbh/ogd-to-lod-mappings` |
-| `RMLMAPPER_JAR` | Path to RMLMapper JAR file | `tools/rmlmapper.jar` |
 | `LOG_LEVEL` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) | `INFO` |
 
 ### Configuration File
@@ -78,7 +72,7 @@ The application uses a YAML configuration file (`config/config.yaml`) with envir
 ```yaml
 github:
   repo: "org/repo-name"
-  token: "${GITHUB_TOKEN}"
+  token: "${APP_GITHUB_TOKEN}"
 
 azure:
   endpoint: "${AZURE_OPENAI_ENDPOINT}"
@@ -90,6 +84,9 @@ sparql:
 
 rml:
   base_uri: "https://example.org/resource/"
+  rmlmapper_use_docker: true
+  rmlmapper_docker_image: "rmlio/rmlmapper-java:latest"
+  yarrrml_parser_docker_image: "rmlio/yarrrml-parser:latest"
 ```
 
 ## Usage
@@ -101,7 +98,7 @@ ogd-to-lod <csv_path> <dcat_path>
 ### Options
 
 - `--config`, `-c`: Path to configuration file (default: `config/config.yaml`)
-- `--output`, `-o`: Path to save the generated RML mapping (Turtle format)
+- `--output`, `-o`: Path to save the generated YARRRML mapping (YAML format)
 - `--base-uri`, `-b`: Base URI for generated resources (overrides config)
 - `--help`: Show help message
 
@@ -157,13 +154,13 @@ ogd-to-lod/
 │   ├── parsers/         # CSV and DCAT parsers
 │   ├── ai/              # Azure OpenAI integration
 │   ├── graph/           # LangGraph conversation flow
-│   ├── rml/            # RML generation (prompts, AI-driven generator)
-│   ├── github/          # GitHub PR creation
-│   └── validation/      # Two-tier RML validation (syntax + RMLMapper + empty-output detection)
+│   ├── rml/            # YARRRML generation (prompts, AI-driven generator)
+│   ├── github/          # GitHub PR creation (commits mapping.yarrrml.yaml)
+│   └── validation/      # Two-tier validation (YAML syntax + Docker: yarrrml-parser → RMLMapper)
 ├── tests/
 ├── config/
 │   └── config.yaml
-├── scripts/             # Utility scripts (RMLMapper setup, worktrees)
+├── scripts/             # Utility scripts (worktrees)
 ├── pyproject.toml
 └── README.md
 ```

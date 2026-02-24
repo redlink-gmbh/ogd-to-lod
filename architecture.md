@@ -10,10 +10,14 @@
 - **LangGraph** - State machine for multi-step conversation flow
 - **langchain-openai** - Azure OpenAI integration for LangGraph
 
-### RML Processing (for validation/preview only)
-- **RMLMapper** (Java-based) - most mature option
-- **MVP:** subprocess call (requires local Java install)
-- **Later:** Docker exec (no manual installation needed)
+### Mapping Format
+- **YARRRML** (YAML-based RML) - compact, human-readable, fewer LLM syntax errors than Turtle RML
+- Converted to Turtle RML at validation time by `yarrrml-parser`
+
+### RML Processing (validation/preview)
+- **yarrrml-parser** (Docker) - converts YARRRML → Turtle RML (step 1 of Tier 2)
+- **RMLMapper** (Docker) - executes Turtle RML against sample CSV, produces RDF (step 2 of Tier 2)
+- Both run as Docker containers sharing a single temp directory — no local Java install needed
 
 ### SPARQL Client
 - **SPARQLWrapper**
@@ -52,20 +56,22 @@
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      RML Generator                               │
-│            (Creates RML from AI suggestions)                     │
+│                    YARRRML Generator                             │
+│         (Creates YARRRML mapping from AI suggestions)            │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      RML Validator                               │
-│        (Runs mapping against sample, checks output)              │
+│  Tier 1: yaml.safe_load() + structural checks (pure Python)      │
+│  Tier 2: yarrrml-parser → Turtle RML → RMLMapper → RDF output   │
+│          (Docker, sample CSV rows only)                          │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    GitHub Integration                            │
-│         (Create branch, commit files, open PR)                   │
+│   (Create branch, commit mapping.yarrrml.yaml, open PR)         │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -80,11 +86,11 @@
 1. User provides CSV file + DCAT metadata
 2. Input Parser extracts schema (columns, types) from CSV and metadata from DCAT
 3. Conversation Manager sends context to AI Service
-4. AI Service suggests RML mapping structure
+4. AI Service suggests mapping structure
 5. User reviews/overrides suggestions in conversation
-6. RML Generator creates RML file
-7. RML Validator runs mapping against sample rows
-8. If valid: GitHub Integration creates PR
+6. YARRRML Generator creates `mapping.yarrrml.yaml`
+7. RML Validator runs two-tier validation against sample rows
+8. If valid: GitHub Integration creates PR with `mapping.yarrrml.yaml`
 9. If invalid: Loop back to step 4 with error context
 
 ## 4. Conversation Flow
@@ -119,28 +125,31 @@
 - AI adjusts proposal and re-presents
 - **User explicitly approves** final mapping
 
-### Phase 5: GENERATION
-- Tool generates full RML
-- Tool shows full RML to user for review 
-- Tool validates RML by running against sample rows
-- Tool shows preview: sample RDF output (human-readable + Turtle)
+### Phase 5: GENERATION & VALIDATION
+- Tool generates YARRRML mapping (shown to user in a `yaml` code block)
+- **Tier 1** — `yaml.safe_load()` + structural checks: fast, auto-retries on failure
+- **Tier 2** — Docker two-step: `yarrrml-parser` → Turtle RML → `rmlmapper-java` → RDF
+- Tool shows preview: sample RDF output (Turtle) from RMLMapper
 
 ### Phase 6: PR CREATION ⏸️ (confirmation required)
 - User reviews preview
 - **User confirms** to create PR
-- Tool creates branch, commits RML + description, opens PR
+- Tool creates branch, commits `mapping.yarrrml.yaml` + description, opens PR
 - Tool displays PR URL
 
 ### Configuration
-Config file (`config.yaml` or similar) contains:
+Config file (`config/config.yaml`) contains:
 ```yaml
 github:
   repo: "org/repo-name"
-  token: "${GITHUB_TOKEN}"  # or direct value for local dev
+  token: "${APP_GITHUB_TOKEN}"
 sparql:
   endpoint: "https://..."
 rml:
   base_uri: "https://ld.stadt-zuerich.ch/statistics/"
+  rmlmapper_use_docker: true
+  rmlmapper_docker_image: "rmlio/rmlmapper-java:latest"
+  yarrrml_parser_docker_image: "rmlio/yarrrml-parser:latest"
 azure:
   endpoint: "https://..."
   api_key: "${AZURE_OPENAI_KEY}"
@@ -202,7 +211,7 @@ Instead of starting with CSV + DCAT, user can start with an existing PR number:
 ```
 1. INITIALIZATION (PR mode)
    └─ User provides: PR number
-   └─ Tool fetches: PR details, existing RML, PR comments
+   └─ Tool fetches: PR details, existing YARRRML mapping, PR comments
 
 2. COMMENT ANALYSIS
    └─ AI analyzes PR comments as feedback
@@ -215,7 +224,7 @@ Instead of starting with CSV + DCAT, user can start with an existing PR number:
    └─ User approves final mapping
 
 4. UPDATE PR
-   └─ Tool validates updated RML
+   └─ Tool validates updated YARRRML mapping
    └─ Tool commits changes to existing PR branch
    └─ Tool adds comment summarizing changes made
 ```
@@ -231,7 +240,8 @@ This enables iterative review workflows:
 ### Output Format
 - **Markdown with code blocks** (hybrid approach)
 - AI explains reasoning in natural language
-- Structured data (mapping proposals, RML) in fenced code blocks (```yaml, ```turtle)
+- Structured data (mapping proposals) in fenced `yaml` code blocks
+- YARRRML mappings in fenced `yaml` code blocks
 - Easy to parse: extract code blocks with regex, display rest to user
 - Works well in CLI and Streamlit
 
@@ -255,8 +265,19 @@ Guidelines:
 Response format:
 - Use markdown for explanations
 - Put structured data (mapping proposals) in fenced YAML code blocks
-- Put RML output in fenced Turtle code blocks
+- Put YARRRML mappings in fenced YAML code blocks
 ```
+
+### YARRRML Generation Prompt
+The generation prompt instructs the AI to produce a YARRRML document with:
+- `prefixes:` block — all required namespace prefixes
+- `sources:` block — CSV access path (`{{CSV_SOURCE}}` placeholder) + `delimiter:`
+- `mappings:` block — one entry per TriplesMap:
+  - `s:` — subject template using `ex-obs:` prefix
+  - `po:` — predicate-object shorthand array; `~iri` suffix for IRI objects
+- A separate mapping per key dimension to generate `schema:DefinedTerm` resources
+
+The `{{CSV_SOURCE}}` placeholder is replaced with the actual file path at validation/deployment time.
 
 ### Context Provided to AI
 For each mapping request, include:
@@ -307,5 +328,6 @@ measures:
 ## 6. Decisions Made
 
 - No existing infrastructure - greenfield project
-- RMLMapper: subprocess for MVP, Docker exec later
+- Mapping format: YARRRML (YAML-based RML) instead of Turtle — simpler prompt, fewer LLM syntax errors
+- Validation: Docker-based two-step pipeline (yarrrml-parser + RMLMapper) — no local Java install needed
 - Chat platform integration: out of scope (Streamlit provides sufficient chat-like UX)
