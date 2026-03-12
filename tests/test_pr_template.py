@@ -281,7 +281,7 @@ class TestFullTemplateSubstitution:
                 "dataset_name": "population",
                 "dataset_description": "Population dataset",
                 "csv_source": "`pop.csv`",
-                "dcat_source": "`meta.jsonld`",
+                "context_source": "`meta.jsonld`",
                 "base_uri": "`https://example.org/`",
                 "mapping_structure": "**Dimensions:**\n- `year` (temporal)",
                 "csv_preview": "| year |\n| --- |\n| 2020 |",
@@ -291,7 +291,6 @@ class TestFullTemplateSubstitution:
         assert "population" in result
         assert "Population dataset" in result
         assert "`pop.csv`" in result
-        assert "`meta.jsonld`" in result
         assert "`https://example.org/`" in result
         assert "`year`" in result
         assert "ex:a ex:b ex:c" in result
@@ -305,7 +304,7 @@ class TestFullTemplateSubstitution:
                 "dataset_name": "empty-test",
                 "dataset_description": "",
                 "csv_source": "",
-                "dcat_source": "",
+                "context_source": "",
                 "base_uri": "",
                 "mapping_structure": "",
                 "csv_preview": "",

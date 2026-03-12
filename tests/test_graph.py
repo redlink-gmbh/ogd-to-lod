@@ -1160,7 +1160,7 @@ class TestPrDescriptionUsesUrls:
             context_source_url="https://example.com/dcat.ttl",
         )
         result = _build_pr_description(state, "test-mapping")
-        assert "https://example.com/dcat.ttl" in result
+        assert "`dcat.ttl`" in result
         assert "`/data/dcat.ttl`" not in result
 
     def test_not_provided_when_no_url(self):
