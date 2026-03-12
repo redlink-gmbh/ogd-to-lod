@@ -20,7 +20,9 @@ _PLACEHOLDER_REGISTRY: dict[str, dict[str, str]] = {
     "dataset name": {"key": "dataset_name", "type": "inline"},
     "dataset description": {"key": "dataset_description", "type": "inline"},
     "csv source": {"key": "csv_source", "type": "inline"},
-    "dcat source": {"key": "dcat_source", "type": "inline"},
+    "dcat source": {"key": "dcat_source", "type": "inline"},       # legacy alias
+    "context source": {"key": "dcat_source", "type": "inline"},    # preferred alias
+    "context files": {"key": "context_files", "type": "inline"},
     "base uri": {"key": "base_uri", "type": "inline"},
     "mapping decisions": {"key": "mapping_structure", "type": "block"},
     "csv sample": {"key": "csv_preview", "type": "block"},
@@ -38,7 +40,8 @@ _DEFAULT_TEMPLATE = """\
 
 ### Source Information
 - **CSV Source:** {{CSV Source}}
-- **DCAT Metadata:** {{DCAT Source}}
+- **Context/Metadata Files:** {{Context Files}}
+- **Public Metadata URL:** {{Context Source}}
 - **Base URI:** {{Base URI}}
 
 ### Mapping Structure

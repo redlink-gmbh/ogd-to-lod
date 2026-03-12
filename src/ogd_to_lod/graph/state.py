@@ -131,10 +131,11 @@ class GraphState:
     csv_source_url: str | None = None
     dcat_source_url: str | None = None
 
-    # DCAT inclusion in PR (populated in ASK_DCAT_INCLUSION state)
+    # Context file inclusion in PR (populated in ASK_DCAT_INCLUSION state)
     include_dcat_in_pr: bool = False
-    dcat_raw_content: str | None = None
-    dcat_source_format: str | None = None
+    dcat_raw_content: str | None = None       # first DCAT file (legacy compat)
+    dcat_source_format: str | None = None     # first DCAT file format (legacy compat)
+    context_raw_files: list[dict] = field(default_factory=list)  # all context files
 
     # PR description (populated in PREVIEW state)
     pr_description: str | None = None
@@ -184,6 +185,7 @@ class GraphState:
             "include_dcat_in_pr": self.include_dcat_in_pr,
             "dcat_raw_content": self.dcat_raw_content,
             "dcat_source_format": self.dcat_source_format,
+            "context_raw_files": self.context_raw_files,
             "pr_description": self.pr_description,
             "validation_error": self.validation_error,
             "validation_retry_count": self.validation_retry_count,

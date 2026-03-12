@@ -31,7 +31,7 @@ def parse_context(
     sources: list[str],
     csv_column_names: list[str],
     ai_service: AIService,
-) -> tuple[DatasetContext, str | None, str | None]:
+) -> tuple[DatasetContext, list[dict], str | None, str | None]:
     """Parse one or more context files into a DatasetContext.
 
     Reads all source files, combines their content, and runs AI normalization
@@ -43,17 +43,20 @@ def parse_context(
         ai_service: AI service used for normalization.
 
     Returns:
-        Tuple of (DatasetContext, dcat_raw_content, dcat_source_format).
-        dcat_raw_content / dcat_source_format are populated from the first
-        DCAT-type file found, for optional PR inclusion.
+        Tuple of (DatasetContext, raw_files, dcat_raw_content, dcat_source_format).
+        raw_files is a list of dicts with keys "filename", "content", "format"
+        for every context file — used for optional PR inclusion.
+        dcat_raw_content / dcat_source_format are from the first DCAT-type file
+        (kept for backward-compat with existing PR state fields).
 
     Raises:
         ContextParseError: If a source file cannot be read.
     """
     if not sources:
-        return DatasetContext(), None, None
+        return DatasetContext(), [], None, None
 
     parts: list[str] = []
+    raw_files: list[dict] = []
     dcat_raw_content: str | None = None
     dcat_source_format: str | None = None
 
@@ -61,8 +64,9 @@ def parse_context(
         content, fmt = _read_source(source)
         label = _label(source)
         parts.append(f"=== {label} ===\n{content}")
+        raw_files.append({"filename": label, "content": content, "format": fmt})
 
-        # Keep first DCAT file for optional PR inclusion
+        # Keep first DCAT file for backward-compat state fields
         if dcat_raw_content is None and _is_dcat_format(source, content, fmt):
             dcat_raw_content = content
             dcat_source_format = fmt
@@ -73,7 +77,7 @@ def parse_context(
     normalizer = ContextNormalizer(ai_service)
     context = normalizer.normalize(combined, sources, csv_column_names)
 
-    return context, dcat_raw_content, dcat_source_format
+    return context, raw_files, dcat_raw_content, dcat_source_format
 
 
 def _label(source: str) -> str:

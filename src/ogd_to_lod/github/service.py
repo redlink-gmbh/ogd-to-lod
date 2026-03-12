@@ -75,21 +75,25 @@ class GitHubService:
         rml_content: str,
         description: str,
         base_branch: str = "main",
+        context_files: list[dict] | None = None,
+        # Legacy params kept for backward compatibility
         dcat_content: str | None = None,
         dcat_filename: str | None = None,
     ) -> PRResult:
         """Create a PR with a new RML mapping.
 
-        Creates a new branch, commits the RML file (and optionally a DCAT
-        metadata file), and opens a pull request.
+        Creates a new branch, commits the RML file (and optionally all
+        context/metadata files), and opens a pull request.
 
         Args:
             mapping_name: Name for the mapping (used for branch and file names).
             rml_content: The RML Turtle content to commit.
             description: Human-readable description for the PR body.
             base_branch: Branch to create PR against (default: main).
-            dcat_content: Optional raw DCAT metadata content to commit.
-            dcat_filename: Filename for the DCAT file (e.g. "metadata.ttl").
+            context_files: Optional list of dicts with keys "filename" and
+                "content" for each context file to commit alongside the mapping.
+            dcat_content: Deprecated — use context_files instead.
+            dcat_filename: Deprecated — use context_files instead.
 
         Returns:
             PRResult with PR number, URL, and branch name.
@@ -105,6 +109,11 @@ class GitHubService:
         logger.info(f"Creating PR for mapping: {mapping_name}")
         logger.debug(f"Branch: {branch_name}, File: {file_path}")
 
+        # Normalise context files: merge legacy dcat_content param
+        files_to_commit: list[dict] = list(context_files or [])
+        if dcat_content and dcat_filename and not files_to_commit:
+            files_to_commit.append({"filename": dcat_filename, "content": dcat_content})
+
         try:
             # Get the base branch reference
             base_ref = self.repo.get_branch(base_branch)
@@ -118,12 +127,17 @@ class GitHubService:
             commit_message = f"Add YARRRML mapping: {mapping_name}"
             self._commit_file(branch_name, file_path, rml_content, commit_message)
 
-            # Commit DCAT metadata file if provided
-            if dcat_content and dcat_filename:
-                dcat_path = f"{self.MAPPINGS_FOLDER}/{safe_name}/{dcat_filename}"
-                dcat_commit_message = f"Add DCAT metadata: {mapping_name}"
-                self._commit_file(branch_name, dcat_path, dcat_content, dcat_commit_message)
-                logger.debug(f"Committed DCAT file: {dcat_path}")
+            # Commit all context/metadata files
+            for ctx_file in files_to_commit:
+                fname = ctx_file.get("filename", "metadata")
+                fcontent = ctx_file.get("content", "")
+                if fcontent:
+                    ctx_path = f"{self.MAPPINGS_FOLDER}/{safe_name}/{fname}"
+                    self._commit_file(
+                        branch_name, ctx_path, fcontent,
+                        f"Add context file: {fname}"
+                    )
+                    logger.debug(f"Committed context file: {ctx_path}")
 
             # Create the PR
             pr = self._create_pr(

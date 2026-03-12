@@ -125,12 +125,13 @@ def analyze_node(state: GraphState, config: Config, ai_service: Any | None = Non
     # Parse context files if provided
     if state.context_paths and ai_service is not None:
         try:
-            dataset_context, dcat_raw, dcat_fmt = parse_context(
+            dataset_context, raw_files, dcat_raw, dcat_fmt = parse_context(
                 sources=state.context_paths,
                 csv_column_names=csv_column_names,
                 ai_service=ai_service,
             )
             state.dataset_context = _serialize_dataset_context(dataset_context)
+            state.context_raw_files = raw_files
             state.dcat_raw_content = dcat_raw
             state.dcat_source_format = dcat_fmt
             logger.debug(
@@ -535,13 +536,22 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
     # Build PR description
     pr_description = _build_pr_description(state, mapping_name)
 
-    # Determine DCAT file for commit
-    dcat_content = None
-    dcat_filename = None
-    if state.include_dcat_in_pr and state.dcat_raw_content:
+    # Collect all context files for PR inclusion
+    context_files_for_pr: list[dict] | None = None
+    if state.include_dcat_in_pr and state.context_raw_files:
+        context_files_for_pr = []
+        for raw in state.context_raw_files:
+            fname = raw.get("filename", "metadata")
+            content = raw.get("content", "")
+            if content:
+                context_files_for_pr.append({"filename": fname, "content": content})
+    elif state.include_dcat_in_pr and state.dcat_raw_content:
+        # Fallback for backward compat when context_raw_files not populated
         fmt = state.dcat_source_format or "turtle"
-        dcat_filename = f"metadata{dcat_format_to_extension(fmt)}"
-        dcat_content = state.dcat_raw_content
+        context_files_for_pr = [{
+            "filename": f"metadata{dcat_format_to_extension(fmt)}",
+            "content": state.dcat_raw_content,
+        }]
 
     # Create the PR
     try:
@@ -550,8 +560,7 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
             mapping_name=mapping_name,
             rml_content=state.generated_rml,
             description=pr_description,
-            dcat_content=dcat_content,
-            dcat_filename=dcat_filename,
+            context_files=context_files_for_pr,
         )
 
         state.pr_url = result.pr_url
@@ -720,11 +729,21 @@ def _build_pr_description(state: GraphState, mapping_name: str) -> str:
         desc = state.dataset_context["description"]
         dataset_description = desc[:200] + "..." if len(desc) > 200 else desc
 
+    # Build context files list for the PR template
+    if state.context_paths:
+        import pathlib
+        context_files_str = ", ".join(
+            f"`{pathlib.Path(p).name}`" for p in state.context_paths
+        )
+    else:
+        context_files_str = "(none provided)"
+
     data = {
         "dataset_name": dataset_name,
         "dataset_description": dataset_description,
         "csv_source": state.csv_source_url or "(not provided)",
         "dcat_source": state.dcat_source_url or "(not provided)",
+        "context_files": context_files_str,
         "base_uri": f"`{state.base_uri}`" if state.base_uri else "",
         "mapping_structure": build_mapping_structure_section(
             state.mapping_proposal, state.mapping_decisions
