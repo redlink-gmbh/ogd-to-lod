@@ -331,17 +331,18 @@ class TestHelperFunctions:
         assert "100" in summary
 
     def test_build_summary_with_dcat(self):
-        """Test summary building with DCAT metadata."""
-        dcat_metadata = {
+        """Test summary building with dataset context."""
+        dataset_context = {
             "title": "Test Dataset",
             "description": "A test dataset for testing",
             "publisher": "Test Org",
             "keywords": ["test", "data"],
+            "column_contexts": {},
         }
 
-        summary = _build_summary(None, dcat_metadata)
+        summary = _build_summary(None, dataset_context)
 
-        assert "DCAT Metadata" in summary
+        assert "Dataset Context" in summary
         assert "Test Dataset" in summary
         assert "Test Org" in summary
 
@@ -717,7 +718,7 @@ class TestSuggestMappingName:
     def test_from_dcat_title(self):
         state = GraphState(
             csv_path="/data/file.csv",
-            dcat_metadata={"title": "Population Statistics 2024"},
+            dataset_context={"title": "Population Statistics 2024"},
         )
         assert suggest_mapping_name(state) == "population-statistics-2024"
 
@@ -732,7 +733,7 @@ class TestSuggestMappingName:
     def test_dcat_title_preferred_over_csv(self):
         state = GraphState(
             csv_path="/data/raw.csv",
-            dcat_metadata={"title": "Air Quality Measurements"},
+            dataset_context={"title": "Air Quality Measurements"},
         )
         name = suggest_mapping_name(state)
         assert "air-quality" in name
@@ -740,7 +741,7 @@ class TestSuggestMappingName:
 
     def test_special_chars_normalised(self):
         state = GraphState(
-            dcat_metadata={"title": "Data (2024) — v2.0"},
+            dataset_context={"title": "Data (2024) — v2.0"},
         )
         name = suggest_mapping_name(state)
         # Should only contain lowercase, digits, hyphens
@@ -765,7 +766,7 @@ class TestConfirmNameNode:
         state = GraphState(
             csv_path="/data/file.csv",
             generated_rml="@prefix rr: <http://example.org/> .",
-            dcat_metadata={"title": "Population Statistics 2024"},
+            dataset_context={"title": "Population Statistics 2024"},
         )
         result = confirm_name_node(state)
         assert result.mapping_name == "population-statistics-2024"
@@ -995,8 +996,8 @@ class TestCsvUrlFlow:
         flow._state.csv_path = "/data/file.csv"
         flow._state.generated_rml = "some rml"
         flow._state.awaiting_user_input = True
-        # No DCAT path → should go to PREVIEW
-        flow._state.dcat_path = None
+        # No context paths → should go to PREVIEW
+        flow._state.context_paths = []
 
         result = flow._handle_csv_url("")
 
@@ -1009,7 +1010,7 @@ class TestCsvUrlFlow:
         flow._state.csv_path = "/data/file.csv"
         flow._state.generated_rml = "some rml"
         flow._state.awaiting_user_input = True
-        flow._state.dcat_path = None
+        flow._state.context_paths = []
 
         result = flow._handle_csv_url("https://example.com/data.csv")
 
@@ -1021,7 +1022,7 @@ class TestCsvUrlFlow:
         flow._state.current_state = FlowState.ASK_CSV_URL
         flow._state.csv_path = "/data/file.csv"
         flow._state.generated_rml = "some rml"
-        flow._state.dcat_path = "/data/dcat.ttl"
+        flow._state.context_paths = ["/data/dcat.ttl"]
         flow._state.awaiting_user_input = True
 
         result = flow._handle_csv_url("https://example.com/data.csv")
@@ -1109,7 +1110,7 @@ class TestContinueWithInputRouting:
         flow._state.csv_path = "/data/file.csv"
         flow._state.generated_rml = "some rml"
         flow._state.awaiting_user_input = True
-        flow._state.dcat_path = None
+        flow._state.context_paths = []
 
         result = flow.continue_with_input("https://example.com/data.csv")
 
@@ -1155,7 +1156,7 @@ class TestPrDescriptionUsesUrls:
     def test_dcat_url_in_description(self):
         state = GraphState(
             csv_path="/data/file.csv",
-            dcat_path="/data/dcat.ttl",
+            context_paths=["/data/dcat.ttl"],
             dcat_source_url="https://example.com/dcat.ttl",
         )
         result = _build_pr_description(state, "test-mapping")
@@ -1165,7 +1166,7 @@ class TestPrDescriptionUsesUrls:
     def test_not_provided_when_no_url(self):
         state = GraphState(
             csv_path="/data/file.csv",
-            dcat_path="/data/dcat.ttl",
+            context_paths=["/data/dcat.ttl"],
         )
         result = _build_pr_description(state, "test-mapping")
         # Local paths should NOT appear — only public URLs are shown

@@ -171,7 +171,7 @@ class MappingFlow:
 
     def _wrap_analyze(self, state_dict: dict[str, Any]) -> dict[str, Any]:
         """Wrapper for analyze node."""
-        self._state = analyze_node(self._state, self._config)
+        self._state = analyze_node(self._state, self._config, self._ai_service)
         return self._state.to_dict()
 
     def _wrap_propose(self, state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -346,14 +346,14 @@ class MappingFlow:
     def start(
         self,
         csv_path: str,
-        dcat_path: str | None = None,
+        context_paths: list[str] | None = None,
         base_uri: str | None = None,
     ) -> GraphState:
         """Start the mapping flow.
 
         Args:
             csv_path: Path to the CSV file.
-            dcat_path: Optional path to DCAT metadata file.
+            context_paths: Optional list of context files (any format).
             base_uri: Optional base URI for generated resources.
 
         Returns:
@@ -364,7 +364,7 @@ class MappingFlow:
         # Set initial state
         self._state = GraphState(
             csv_path=csv_path,
-            dcat_path=dcat_path,
+            context_paths=context_paths or [],
             base_uri=base_uri,
         )
 
@@ -579,16 +579,16 @@ class MappingFlow:
         else:
             logger.info("User skipped CSV source URL")
 
-        # If DCAT was provided, ask for its URL too
-        if self._state.dcat_path:
+        # If context files were provided, ask for a public URL for reference
+        if self._state.context_paths:
             self._state.current_state = FlowState.ASK_DCAT_URL
             self._state.awaiting_user_input = True
             self._state.add_message(
                 "assistant",
-                "Enter the public URL for the DCAT metadata (or press Enter to skip):",
+                "Enter the public URL for the context/metadata source (or press Enter to skip):",
             )
         else:
-            # No DCAT — go straight to preview
+            # No context files — go straight to preview
             self._state = preview_node(self._state, self._ai_service)
 
         return self._state
@@ -613,12 +613,12 @@ class MappingFlow:
         else:
             logger.info("User skipped DCAT source URL")
 
-        # Ask whether to include the DCAT file in the PR
+        # Ask whether to include the context file(s) in the PR
         self._state.current_state = FlowState.ASK_DCAT_INCLUSION
         self._state.awaiting_user_input = True
         self._state.add_message(
             "assistant",
-            "Include the DCAT metadata file in the PR? (yes/no):",
+            "Include the context/metadata file(s) in the PR? (yes/no):",
         )
 
         return self._state

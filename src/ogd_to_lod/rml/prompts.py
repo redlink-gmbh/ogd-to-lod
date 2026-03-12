@@ -97,6 +97,9 @@ mappings:
 ## CSV Schema
 {csv_schema}
 
+## Column Descriptions (from dataset context)
+{column_descriptions}
+
 ## RDF Data Cube Conventions (CRITICAL)
 
 Each CSV row represents ONE cube:Observation. Each column is either:

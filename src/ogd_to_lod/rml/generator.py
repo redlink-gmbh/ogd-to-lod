@@ -40,6 +40,7 @@ class RMLGenerator:
         csv_schema: dict[str, Any],
         csv_path: str,
         base_uri: str,
+        dataset_context: dict[str, Any] | None = None,
     ) -> str:
         """Generate YARRRML mapping from approved proposal.
 
@@ -48,6 +49,7 @@ class RMLGenerator:
             csv_schema: The CSV schema dictionary with column info.
             csv_path: Path to the CSV file.
             base_uri: Base URI for generated resources.
+            dataset_context: Optional normalized dataset context with column descriptions.
 
         Returns:
             Generated YARRRML mapping.
@@ -60,6 +62,7 @@ class RMLGenerator:
         # Format the mapping proposal for the prompt
         proposal_text = self._format_proposal(mapping_proposal)
         schema_text = self._format_schema(csv_schema)
+        column_desc_text = self._format_column_descriptions(dataset_context)
 
         # Build the prompt — use a placeholder for the CSV path so that the
         # generated YARRRML is portable and can be deployed with different CSV sources.
@@ -67,6 +70,7 @@ class RMLGenerator:
             base_uri=base_uri,
             mapping_proposal=proposal_text,
             csv_schema=schema_text,
+            column_descriptions=column_desc_text,
         )
 
         logger.debug("Sending YARRRML generation prompt to AI")
@@ -183,6 +187,35 @@ class RMLGenerator:
                 if aggregation:
                     line += f" (aggregation: {aggregation})"
                 lines.append(line)
+
+        return "\n".join(lines)
+
+    def _format_column_descriptions(self, dataset_context: dict[str, Any] | None) -> str:
+        """Format column descriptions from dataset context for the AI prompt.
+
+        Args:
+            dataset_context: Serialized DatasetContext dict or None.
+
+        Returns:
+            Formatted string, or a note that no descriptions are available.
+        """
+        if not dataset_context:
+            return "(no column descriptions provided)"
+
+        column_contexts = dataset_context.get("column_contexts") or {}
+        if not column_contexts:
+            return "(no column descriptions provided)"
+
+        lines = []
+        for col_name, ctx in column_contexts.items():
+            desc = ctx.get("description") or ""
+            comment = ctx.get("comment") or ""
+            line = f"- {col_name}"
+            if desc:
+                line += f": {desc}"
+            if comment:
+                line += f" ({comment})"
+            lines.append(line)
 
         return "\n".join(lines)
 

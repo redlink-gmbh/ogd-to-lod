@@ -98,12 +98,12 @@ class GraphState:
 
     # Input paths
     csv_path: str | None = None
-    dcat_path: str | None = None
+    context_paths: list[str] = field(default_factory=list)
     base_uri: str | None = None
 
     # Parsed data (populated in ANALYZE state)
     csv_schema: dict[str, Any] | None = None
-    dcat_metadata: dict[str, Any] | None = None
+    dataset_context: dict[str, Any] | None = None
     parsed_summary: str | None = None
 
     # Mapping proposal (populated in PROPOSE state)
@@ -165,10 +165,10 @@ class GraphState:
         return {
             "current_state": self.current_state.value,
             "csv_path": self.csv_path,
-            "dcat_path": self.dcat_path,
+            "context_paths": self.context_paths,
             "base_uri": self.base_uri,
             "csv_schema": self.csv_schema,
-            "dcat_metadata": self.dcat_metadata,
+            "dataset_context": self.dataset_context,
             "parsed_summary": self.parsed_summary,
             "mapping_proposal": self.mapping_proposal.to_dict() if self.mapping_proposal else None,
             "proposal_text": self.proposal_text,

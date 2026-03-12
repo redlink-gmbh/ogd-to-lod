@@ -96,6 +96,49 @@ class DCATMetadata:
 
 
 @dataclass
+class ColumnContext:
+    """User-provided context for a single CSV column."""
+
+    header_name: str
+    description: str | None = None
+    comment: str | None = None
+
+
+@dataclass
+class DatasetContext:
+    """Normalized dataset context extracted from one or more context files.
+
+    Replaces DCATMetadata as the unified representation of dataset-level
+    and column-level metadata, regardless of the original input format.
+    """
+
+    sources: list[str] = field(default_factory=list)
+    title: str | None = None
+    description: str | None = None
+    publisher: str | None = None
+    keywords: list[str] = field(default_factory=list)
+    temporal_coverage: TemporalCoverage | None = None
+    spatial_coverage: SpatialCoverage | None = None
+    identifier: str | None = None
+    issued: str | None = None
+    modified: str | None = None
+    language: str | None = None
+    license: str | None = None
+    access_rights: str | None = None
+    contact_point: str | None = None
+    column_contexts: dict[str, ColumnContext] = field(default_factory=dict)
+    source_format: str | None = None  # "dcat" | "freetext" | "markdown" | "json" | "mixed"
+    raw_content: str | None = None  # Combined raw content of all source files
+
+    def __post_init__(self) -> None:
+        """Ensure list fields are initialised."""
+        if self.keywords is None:
+            self.keywords = []
+        if self.column_contexts is None:
+            self.column_contexts = {}
+
+
+@dataclass
 class ParsedInput:
     """Unified data model combining CSV data and DCAT metadata."""
 
