@@ -6,10 +6,11 @@ Tool to create YARRRML (YAML-based RML) mappings for CSV files using generative 
 
 This tool helps transform Open Government Data (OGD) CSV files into Linked Open Data (LOD) by:
 
-1. Analyzing CSV structure and DCAT metadata
-2. Using AI to propose YARRRML mappings targeting cube.link and schema.org vocabularies
-3. Validating mappings with a two-tier pipeline (YAML syntax check + Docker-based execution)
-4. Creating GitHub PRs with the generated `mapping.yarrrml.yaml` files
+1. Analyzing CSV structure and optional dataset context (DCAT, Markdown, freetext, JSON, or any mix)
+2. Using AI to normalize context into a unified internal model — including per-column descriptions
+3. Using AI to propose YARRRML mappings targeting cube.link and schema.org vocabularies
+4. Validating mappings with a two-tier pipeline (YAML syntax check + Docker-based execution)
+5. Creating GitHub PRs with the generated `mapping.yarrrml.yaml` files
 
 ## Installation
 
@@ -92,14 +93,52 @@ rml:
 ## Usage
 
 ```bash
-ogd-to-lod <csv_path> <dcat_path>
+ogd-to-lod <csv_path> [--context FILE ...]
 ```
+
+### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `csv_path` | Path to the CSV file to map (required) |
+| `--context FILE [FILE ...]` | One or more context files describing the dataset. Any format is accepted: DCAT (JSON-LD, Turtle, RDF/XML), Markdown, plain text, JSON, or combinations thereof. |
 
 ### Options
 
-- `--config`, `-c`: Path to configuration file (default: `config/config.yaml`)
-- `--base-uri`, `-b`: Base URI for generated resources (overrides config)
-- `--help`: Show help message
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--config` | `-c` | Path to configuration file (default: `config/config.yaml`) |
+| `--base-uri` | `-b` | Base URI for generated resources (overrides config) |
+| `--help` | | Show help message |
+
+### Examples
+
+```bash
+# CSV only (no context)
+ogd-to-lod data/population.csv
+
+# With a DCAT metadata file
+ogd-to-lod data/population.csv --context metadata/population.dcat.jsonld
+
+# With multiple context files (DCAT + column documentation)
+ogd-to-lod data/population.csv --context metadata/population.dcat.ttl docs/columns.md
+
+# Override base URI
+ogd-to-lod data/population.csv --context metadata.ttl --base-uri https://example.org/data/
+```
+
+### Context Files
+
+The `--context` flag accepts any number of files in any format. The AI normalizes all provided
+files into a unified internal `DatasetContext` that includes:
+
+- **Dataset-level metadata**: title, description, publisher, keywords, temporal/spatial coverage, license, etc.
+- **Column-level metadata**: description and comment per CSV column header
+
+Multiple files are merged — dataset-level fields use the first non-null value (DCAT files take
+precedence), while column descriptions are unioned across all files. Columns without explicit
+documentation are inferred by the AI from column names and sample values, and surfaced to the
+user during the mapping proposal step for review.
 
 ## PR Template
 
@@ -114,10 +153,10 @@ The PR description is generated from a Markdown template (`config/pr_template.md
 
 | Placeholder | Key | Type | Data Source |
 |-------------|-----|------|-------------|
-| `{{Dataset Name}}` | `dataset_name` | inline | DCAT title or mapping name |
-| `{{Dataset Description}}` | `dataset_description` | inline | DCAT description |
+| `{{Dataset Name}}` | `dataset_name` | inline | Context title or mapping name |
+| `{{Dataset Description}}` | `dataset_description` | inline | Context description |
 | `{{CSV Source}}` | `csv_source` | inline | Public CSV URL |
-| `{{DCAT Source}}` | `dcat_source` | inline | Public DCAT metadata URL |
+| `{{DCAT Source}}` | `dcat_source` | inline | Public context/metadata URL |
 | `{{Base URI}}` | `base_uri` | inline | Base URI from config |
 | `{{Mapping Decisions}}` | `mapping_structure` | block | AI proposal (dimensions/measures) |
 | `{{CSV Sample}}` | `csv_preview` | block | Parsed CSV sample rows |
@@ -148,18 +187,24 @@ ruff format .
 ogd-to-lod/
 ├── src/ogd_to_lod/
 │   ├── __init__.py
-│   ├── cli.py           # CLI entry point
-│   ├── config.py        # Configuration management
-│   ├── parsers/         # CSV and DCAT parsers
-│   ├── ai/              # Azure OpenAI integration
-│   ├── graph/           # LangGraph conversation flow
-│   ├── rml/            # YARRRML generation (prompts, AI-driven generator)
-│   ├── github/          # GitHub PR creation (commits mapping.yarrrml.yaml)
-│   └── validation/      # Two-tier validation (YAML syntax + Docker: yarrrml-parser → RMLMapper)
+│   ├── cli.py                   # CLI entry point
+│   ├── config.py                # Configuration management
+│   ├── parsers/
+│   │   ├── models.py            # CSVData, DatasetContext, ColumnContext, …
+│   │   ├── csv_parser.py        # CSV parsing (encoding/delimiter auto-detect)
+│   │   ├── dcat_parser.py       # Deterministic DCAT/RDF parser (rdflib)
+│   │   ├── context_parser.py    # Multi-file context reader (format detection)
+│   │   └── context_normalizer.py# AI-based extraction → DatasetContext
+│   ├── ai/                      # Azure OpenAI integration
+│   ├── graph/                   # LangGraph conversation flow
+│   ├── rml/                     # YARRRML generation (prompts, AI-driven generator)
+│   ├── github/                  # GitHub PR creation (commits mapping.yarrrml.yaml)
+│   └── validation/              # Two-tier validation (YAML syntax + Docker: yarrrml-parser → RMLMapper)
 ├── tests/
 ├── config/
-│   └── config.yaml
-├── scripts/             # Utility scripts (worktrees)
+│   ├── config.yaml
+│   └── pr_template.md
+├── scripts/                     # Utility scripts (worktrees)
 ├── pyproject.toml
 └── README.md
 ```
