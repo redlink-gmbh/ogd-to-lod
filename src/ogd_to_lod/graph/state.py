@@ -4,12 +4,15 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from ogd_to_lod.lookup import ReuseContext
+
 
 class FlowState(Enum):
     """Possible states in the conversation flow."""
 
     INIT = "init"
     ANALYZE = "analyze"
+    LOOKUP = "lookup"
     PROPOSE = "propose"
     REFINE = "refine"
     GENERATE = "generate"
@@ -117,6 +120,9 @@ class GraphState:
     dataset_context: dict[str, Any] | None = None
     parsed_summary: str | None = None
 
+    # Vocabulary reuse context (populated in LOOKUP state)
+    reuse_context: ReuseContext | None = None
+
     # Mapping proposal (populated in PROPOSE state)
     mapping_proposal: MappingProposal | None = None
     proposal_text: str | None = None  # AI's explanation
@@ -178,6 +184,7 @@ class GraphState:
             "csv_schema": self.csv_schema,
             "dataset_context": self.dataset_context,
             "parsed_summary": self.parsed_summary,
+            "reuse_context": self.reuse_context.has_matches() if self.reuse_context else False,
             "mapping_proposal": self.mapping_proposal.to_dict() if self.mapping_proposal else None,
             "proposal_text": self.proposal_text,
             "user_input": self.user_input,

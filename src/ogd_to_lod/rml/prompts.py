@@ -99,7 +99,7 @@ mappings:
 
 ## Column Descriptions (from dataset context)
 {column_descriptions}
-
+{reuse_context}
 ## RDF Data Cube Conventions (CRITICAL)
 
 Each CSV row represents ONE cube:Observation. Each column is either:
@@ -108,13 +108,20 @@ Each CSV row represents ONE cube:Observation. Each column is either:
 
 ### URI Conventions (MUST FOLLOW)
 
-**Properties** (dimensions and measures) — all use `ex-property:` prefix:
-- Time dimensions: ALWAYS use `ex-property:ZEIT`
-- Spatial dimensions: ALWAYS use `ex-property:RAUM`
-- Other dimensions/measures: `ex-property:` + a **sanitized** form of the column name
+**Properties** (dimensions and measures):
+- If an existing URI is listed for a column in the "Existing Vocabulary" section above, \
+use that full URI as a string literal in the predicate position (not a prefixed name).
+- Otherwise use `ex-property:` prefix:
+  - Time dimensions: ALWAYS use `ex-property:ZEIT`
+  - Spatial dimensions: ALWAYS use `ex-property:RAUM`
+  - Other dimensions/measures: `ex-property:` + a **sanitized** form of the column name
 
-**Code values** (key dimension instances) — all use `ex-code:` prefix:
-- Construct from CSV column values: `ex-code:$(columnValue)`
+**Code values** (key dimension instances):
+- If an existing URI template is listed for a column in the "Existing Vocabulary" section \
+above, use that template (it already includes the `~iri` suffix).
+- Otherwise construct from CSV column values using `ex-code:` prefix: `ex-code:$(columnValue)~iri`
+- When reusing an existing URI template, do NOT generate a separate mapping entry for \
+schema:DefinedTerm resources for that column — the DefinedTerms already exist.
 
 ### IRI-Safe Property Names (CRITICAL)
 

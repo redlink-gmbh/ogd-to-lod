@@ -16,6 +16,7 @@ from .nodes import (
     generate_node,
     handle_user_input,
     init_node,
+    lookup_node,
     preview_node,
     propose_node,
     regenerate_node,
@@ -59,6 +60,8 @@ class MappingFlow:
         # Add nodes
         graph.add_node("init", self._wrap_init)
         graph.add_node("analyze", self._wrap_analyze)
+        graph.add_node("lookup", self._wrap_lookup)
+        graph.add_node("wait_for_lookup", self._wait_for_lookup)
         graph.add_node("propose", self._wrap_propose)
         graph.add_node("wait_for_input", self._wait_for_input)
         graph.add_node("process_input", self._wrap_process_input)
@@ -90,10 +93,22 @@ class MappingFlow:
             "analyze",
             self._route_from_analyze,
             {
-                "propose": "propose",
+                "lookup": "lookup",
                 "error": "error",
             },
         )
+
+        graph.add_conditional_edges(
+            "lookup",
+            self._route_from_lookup,
+            {
+                "propose": "propose",
+                "wait_for_lookup": "wait_for_lookup",
+                "error": "error",
+            },
+        )
+
+        graph.add_edge("wait_for_lookup", "lookup")
 
         graph.add_edge("propose", "wait_for_input")
 
@@ -172,6 +187,16 @@ class MappingFlow:
     def _wrap_analyze(self, state_dict: dict[str, Any]) -> dict[str, Any]:
         """Wrapper for analyze node."""
         self._state = analyze_node(self._state, self._config, self._ai_service)
+        return self._state.to_dict()
+
+    def _wrap_lookup(self, state_dict: dict[str, Any]) -> dict[str, Any]:
+        """Wrapper for lookup node."""
+        self._state = lookup_node(self._state, self._config)
+        return self._state.to_dict()
+
+    def _wait_for_lookup(self, state_dict: dict[str, Any]) -> dict[str, Any]:
+        """Node that waits for user confirmation of vocabulary reuse."""
+        self._state.awaiting_user_input = True
         return self._state.to_dict()
 
     def _wrap_propose(self, state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -281,6 +306,14 @@ class MappingFlow:
         """Route from ANALYZE state."""
         if self._state.current_state == FlowState.ERROR:
             return "error"
+        return "lookup"
+
+    def _route_from_lookup(self, state_dict: dict[str, Any]) -> str:
+        """Route from LOOKUP state."""
+        if self._state.current_state == FlowState.ERROR:
+            return "error"
+        if self._state.awaiting_user_input:
+            return "wait_for_lookup"
         return "propose"
 
     def _route_from_process_input(self, state_dict: dict[str, Any]) -> str:
@@ -389,6 +422,10 @@ class MappingFlow:
         self._state.user_input = user_input
         self._state.awaiting_user_input = False
 
+        # Handle vocabulary reuse confirmation if in LOOKUP state
+        if self._state.current_state == FlowState.LOOKUP:
+            return self._handle_lookup_confirmation(user_input)
+
         # Handle name confirmation if in CONFIRM_NAME state
         if self._state.current_state == FlowState.CONFIRM_NAME:
             return self._handle_name_confirmation(user_input)
@@ -492,6 +529,51 @@ class MappingFlow:
         self._state.current_state = FlowState.REFINE
         if self._state.mapping_proposal:
             self._state.mapping_proposal.status = "refining"
+
+    def _handle_lookup_confirmation(self, user_input: str) -> GraphState:
+        """Handle user yes/no confirmation of vocabulary reuse from SPARQL.
+
+        'yes' / 'y' — keep the ReuseContext and proceed to PROPOSE.
+        'no' / 'n' / 'skip' — clear the ReuseContext (use fresh URIs) and proceed.
+        Anything else — prompt again.
+
+        Args:
+            user_input: User's response.
+
+        Returns:
+            Updated state.
+        """
+        self._state.add_message("user", user_input)
+        answer = user_input.lower().strip()
+
+        if answer in ("yes", "y", "ja", "ok", "sure", "reuse"):
+            logger.info("User accepted vocabulary reuse from SPARQL")
+            self._state.add_message(
+                "assistant",
+                "Great, I will reuse the existing vocabulary URIs in the mapping.",
+            )
+            self._state.awaiting_user_input = False
+            self._state.current_state = FlowState.PROPOSE
+            self._state = propose_node(self._state, self._ai_service)
+        elif answer in ("no", "n", "nein", "skip", "fresh", "new"):
+            logger.info("User rejected vocabulary reuse — clearing reuse context")
+            from ogd_to_lod.lookup import ReuseContext
+            self._state.reuse_context = ReuseContext()
+            self._state.add_message(
+                "assistant",
+                "Understood, I will generate fresh URIs for all properties and code values.",
+            )
+            self._state.awaiting_user_input = False
+            self._state.current_state = FlowState.PROPOSE
+            self._state = propose_node(self._state, self._ai_service)
+        else:
+            self._state.awaiting_user_input = True
+            self._state.add_message(
+                "assistant",
+                "Please answer with 'yes' to reuse the existing URIs or 'no' to generate fresh ones.",
+            )
+
+        return self._state
 
     def _handle_name_confirmation(self, user_input: str) -> GraphState:
         """Handle user confirmation of the mapping name.
@@ -629,6 +711,13 @@ class MappingFlow:
     def has_rdf_preview(self) -> bool:
         """Check if an RDF preview is available."""
         return self._state.rdf_preview is not None
+
+    def is_awaiting_lookup_confirmation(self) -> bool:
+        """Check if flow is waiting for vocabulary reuse confirmation."""
+        return (
+            self._state.current_state == FlowState.LOOKUP
+            and self._state.awaiting_user_input
+        )
 
     def is_awaiting_name_confirmation(self) -> bool:
         """Check if flow is waiting for mapping name confirmation."""

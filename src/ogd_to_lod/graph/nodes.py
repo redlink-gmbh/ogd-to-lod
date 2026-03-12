@@ -9,6 +9,7 @@ import yaml
 from ogd_to_lod.ai import AIService
 from ogd_to_lod.config import Config
 from ogd_to_lod.github import GitHubService, PRCreationError
+from ogd_to_lod.lookup import ReuseContext, SPARQLLookup
 from ogd_to_lod.github.pr_template import (
     build_csv_preview_section,
     build_mapping_structure_section,
@@ -146,9 +147,70 @@ def analyze_node(state: GraphState, config: Config, ai_service: Any | None = Non
     # Build summary
     state.parsed_summary = _build_summary(state.csv_schema, state.dataset_context)
 
-    # Transition to PROPOSE
-    state.current_state = FlowState.PROPOSE
-    logger.info("Transitioning to PROPOSE state")
+    # Transition to LOOKUP
+    state.current_state = FlowState.LOOKUP
+    logger.info("Transitioning to LOOKUP state")
+
+    return state
+
+
+def lookup_node(state: GraphState, config: Config) -> GraphState:
+    """Look up existing cube.link properties and DefinedTerms via SPARQL.
+
+    When no SPARQL endpoint is configured, silently skips to PROPOSE.
+    When matches are found, stores them in state.reuse_context and
+    presents them to the user for confirmation.
+
+    Args:
+        state: Current graph state with parsed CSV schema.
+        config: Application configuration (SPARQL endpoint URL).
+
+    Returns:
+        Updated state.
+    """
+    logger.info("Entering LOOKUP state")
+
+    endpoint = config.sparql.endpoint if config.sparql else None
+
+    if not endpoint:
+        logger.info("No SPARQL endpoint configured — skipping vocabulary lookup")
+        state.reuse_context = ReuseContext()
+        state.current_state = FlowState.PROPOSE
+        return state
+
+    if not state.csv_schema:
+        logger.warning("No CSV schema available for SPARQL lookup — skipping")
+        state.reuse_context = ReuseContext()
+        state.current_state = FlowState.PROPOSE
+        return state
+
+    logger.info("Querying SPARQL endpoint: %s", endpoint)
+    lookup = SPARQLLookup(endpoint)
+
+    proposal_dict = state.mapping_proposal.to_dict() if state.mapping_proposal else None
+    context = lookup.build_reuse_context(state.csv_schema, proposal_dict)
+    state.reuse_context = context
+
+    if not context.has_matches():
+        logger.info("No reusable vocabulary found — proceeding to PROPOSE")
+        state.current_state = FlowState.PROPOSE
+        return state
+
+    # Present matches to user for confirmation
+    display = context.to_display_text()
+    msg = (
+        f"Found existing vocabulary resources in the SPARQL endpoint:\n\n{display}\n\n"
+        "Reuse these existing URIs in the mapping? "
+        "(yes = reuse them, no = generate fresh URIs)"
+    )
+    state.add_message("assistant", msg)
+    state.current_state = FlowState.LOOKUP
+    state.awaiting_user_input = True
+    logger.info(
+        "Found %d property and %d DefinedTermSet matches — awaiting user confirmation",
+        len(context.properties),
+        len(context.defined_term_sets),
+    )
 
     return state
 
@@ -377,6 +439,7 @@ def generate_node(state: GraphState, ai_service: AIService) -> GraphState:
             csv_path=state.csv_path,
             base_uri=state.base_uri,
             dataset_context=state.dataset_context,
+            reuse_context=state.reuse_context,
         )
 
         state.generated_rml = rml_content

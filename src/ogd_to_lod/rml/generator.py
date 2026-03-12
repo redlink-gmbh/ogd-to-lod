@@ -3,6 +3,7 @@
 from typing import Any
 
 from ogd_to_lod.ai import AIService
+from ogd_to_lod.lookup import ReuseContext
 from ogd_to_lod.logging import get_logger
 from ogd_to_lod.rml.prompts import RML_CORRECTION_PROMPT, RML_GENERATION_PROMPT
 
@@ -41,6 +42,7 @@ class RMLGenerator:
         csv_path: str,
         base_uri: str,
         dataset_context: dict[str, Any] | None = None,
+        reuse_context: ReuseContext | None = None,
     ) -> str:
         """Generate YARRRML mapping from approved proposal.
 
@@ -50,6 +52,7 @@ class RMLGenerator:
             csv_path: Path to the CSV file.
             base_uri: Base URI for generated resources.
             dataset_context: Optional normalized dataset context with column descriptions.
+            reuse_context: Optional SPARQL-based reuse context with existing URIs.
 
         Returns:
             Generated YARRRML mapping.
@@ -64,6 +67,16 @@ class RMLGenerator:
         schema_text = self._format_schema(csv_schema)
         column_desc_text = self._format_column_descriptions(dataset_context)
 
+        # Format reuse context (empty string when no matches)
+        reuse_text = ""
+        if reuse_context and reuse_context.has_matches():
+            reuse_text = "\n" + reuse_context.to_prompt_text() + "\n"
+            logger.info(
+                "Injecting reuse context: %d properties, %d DefinedTermSets",
+                len(reuse_context.properties),
+                len(reuse_context.defined_term_sets),
+            )
+
         # Build the prompt — use a placeholder for the CSV path so that the
         # generated YARRRML is portable and can be deployed with different CSV sources.
         prompt = RML_GENERATION_PROMPT.format(
@@ -71,6 +84,7 @@ class RMLGenerator:
             mapping_proposal=proposal_text,
             csv_schema=schema_text,
             column_descriptions=column_desc_text,
+            reuse_context=reuse_text,
         )
 
         logger.debug("Sending YARRRML generation prompt to AI")
@@ -251,6 +265,7 @@ def generate_rml(
     csv_schema: dict[str, Any],
     csv_path: str,
     base_uri: str,
+    reuse_context: ReuseContext | None = None,
 ) -> str:
     """Convenience function to generate YARRRML mapping.
 
@@ -260,6 +275,7 @@ def generate_rml(
         csv_schema: The CSV schema dictionary with column info.
         csv_path: Path to the CSV file.
         base_uri: Base URI for generated resources.
+        reuse_context: Optional SPARQL-based reuse context with existing URIs.
 
     Returns:
         Generated YARRRML mapping.
@@ -268,4 +284,4 @@ def generate_rml(
         RMLGenerationError: If generation fails.
     """
     generator = RMLGenerator(ai_service)
-    return generator.generate(mapping_proposal, csv_schema, csv_path, base_uri)
+    return generator.generate(mapping_proposal, csv_schema, csv_path, base_uri, reuse_context)
