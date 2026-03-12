@@ -16,7 +16,6 @@ class FlowState(Enum):
     VALIDATE = "validate"
     CONFIRM_NAME = "confirm_name"
     ASK_CSV_URL = "ask_csv_url"
-    ASK_CONTEXT_URL = "ask_context_url"
     ASK_CONTEXT_INCLUSION = "ask_context_inclusion"
     PREVIEW = "preview"
     CREATE_PR = "create_pr"
@@ -127,9 +126,8 @@ class GraphState:
     # Mapping name (populated in CONFIRM_NAME state, user-editable)
     mapping_name: str | None = None
 
-    # Source URLs (populated in ASK_CSV_URL / ASK_CONTEXT_URL states)
+    # Source URL (populated in ASK_CSV_URL state)
     csv_source_url: str | None = None
-    context_source_url: str | None = None
 
     # Context file inclusion in PR (populated in ASK_CONTEXT_INCLUSION state)
     include_context_in_pr: bool = False
@@ -179,7 +177,6 @@ class GraphState:
             "mapping_decisions": self.mapping_decisions,
             "mapping_name": self.mapping_name,
             "csv_source_url": self.csv_source_url,
-            "context_source_url": self.context_source_url,
             "include_context_in_pr": self.include_context_in_pr,
             "context_raw_files": self.context_raw_files,
             "pr_description": self.pr_description,

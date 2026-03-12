@@ -20,7 +20,6 @@ _PLACEHOLDER_REGISTRY: dict[str, dict[str, str]] = {
     "dataset name": {"key": "dataset_name", "type": "inline"},
     "dataset description": {"key": "dataset_description", "type": "inline"},
     "csv source": {"key": "csv_source", "type": "inline"},
-    "context source": {"key": "context_source", "type": "inline"},
     "context files": {"key": "context_files", "type": "inline"},
     "base uri": {"key": "base_uri", "type": "inline"},
     "mapping decisions": {"key": "mapping_structure", "type": "block"},

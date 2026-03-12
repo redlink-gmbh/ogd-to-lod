@@ -157,7 +157,6 @@ The PR description is generated from a Markdown template (`config/pr_template.md
 | `{{Dataset Description}}` | `dataset_description` | inline | Context description |
 | `{{CSV Source}}` | `csv_source` | inline | Public CSV URL |
 | `{{Context Files}}` | `context_files` | inline | Comma-separated list of all `--context` filenames |
-| `{{Context Source}}` | `context_source` | inline | Optional single public metadata URL |
 | `{{Base URI}}` | `base_uri` | inline | Base URI from config |
 | `{{Mapping Decisions}}` | `mapping_structure` | block | AI proposal (dimensions/measures) |
 | `{{CSV Sample}}` | `csv_preview` | block | Parsed CSV sample rows |

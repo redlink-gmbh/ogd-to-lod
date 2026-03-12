@@ -166,8 +166,6 @@ def main() -> int:
             prompt = f"Dataset name ['{name}']: "
         elif flow.is_awaiting_csv_url():
             prompt = "Public CSV source URL (Enter to skip): "
-        elif flow.is_awaiting_context_url():
-            prompt = "Public context/metadata source URL (Enter to skip): "
         elif flow.is_awaiting_context_inclusion():
             prompt = "Include context/metadata file(s) in PR? (yes/no): "
         elif flow.is_awaiting_pr_confirmation():
@@ -189,7 +187,6 @@ def main() -> int:
         allows_empty = (
             flow.is_awaiting_name_confirmation()
             or flow.is_awaiting_csv_url()
-            or flow.is_awaiting_context_url()
         )
         if not user_input and not allows_empty:
             continue

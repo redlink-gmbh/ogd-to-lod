@@ -733,7 +733,6 @@ def _build_pr_description(state: GraphState, mapping_name: str) -> str:
         "dataset_name": dataset_name,
         "dataset_description": dataset_description,
         "csv_source": state.csv_source_url or "(not provided)",
-        "context_source": state.context_source_url or "(not provided)",
         "context_files": context_files_str,
         "base_uri": f"`{state.base_uri}`" if state.base_uri else "",
         "mapping_structure": build_mapping_structure_section(
