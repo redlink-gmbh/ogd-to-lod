@@ -21,11 +21,11 @@ azure:
 
 sparql:
   # Optional: SPARQL endpoint for querying existing dimensions (V1)
-  endpoint: null
+  endpoint: "https://ld.stadt-zuerich.ch/query"
 
 rml:
   # Base URI pattern for generated resources
-  base_uri: "https://www.ld.bs.ch/statistics/"
+  base_uri: "https://ld.stadt-zuerich.ch/statistics/"
   # Use Docker for two-step validation: yarrrml-parser → RMLMapper
   rmlmapper_use_docker: true
   # Docker image for RMLMapper (Tier 2 validation, step 2)

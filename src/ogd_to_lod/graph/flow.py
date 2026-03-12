@@ -391,15 +391,15 @@ class MappingFlow:
         if self._state.current_state == FlowState.CONFIRM_NAME:
             return self._handle_name_confirmation(user_input)
 
-        # Handle source URL and DCAT inclusion states
+        # Handle source URL and context inclusion states
         if self._state.current_state == FlowState.ASK_CSV_URL:
             return self._handle_csv_url(user_input)
 
-        if self._state.current_state == FlowState.ASK_DCAT_URL:
-            return self._handle_dcat_url(user_input)
+        if self._state.current_state == FlowState.ASK_CONTEXT_URL:
+            return self._handle_context_url(user_input)
 
-        if self._state.current_state == FlowState.ASK_DCAT_INCLUSION:
-            return self._handle_dcat_inclusion(user_input)
+        if self._state.current_state == FlowState.ASK_CONTEXT_INCLUSION:
+            return self._handle_context_inclusion(user_input)
 
         # Handle PR confirmation if in PREVIEW state
         if self._state.current_state == FlowState.PREVIEW:
@@ -579,13 +579,13 @@ class MappingFlow:
         else:
             logger.info("User skipped CSV source URL")
 
-        # If context files were provided, ask for a public URL for reference
+        # If context files were provided, ask for a public URL and inclusion preference
         if self._state.context_paths:
-            self._state.current_state = FlowState.ASK_DCAT_URL
+            self._state.current_state = FlowState.ASK_CONTEXT_URL
             self._state.awaiting_user_input = True
             self._state.add_message(
                 "assistant",
-                "Enter the public URL for the context/metadata source (or press Enter to skip):",
+                "Enter a public URL for the context/metadata source (or press Enter to skip):",
             )
         else:
             # No context files — go straight to preview
@@ -593,11 +593,11 @@ class MappingFlow:
 
         return self._state
 
-    def _handle_dcat_url(self, user_input: str) -> GraphState:
-        """Handle DCAT source URL input.
+    def _handle_context_url(self, user_input: str) -> GraphState:
+        """Handle context source URL input.
 
         Empty input skips; non-empty stores the URL. Always transitions to
-        ASK_DCAT_INCLUSION.
+        ASK_CONTEXT_INCLUSION.
 
         Args:
             user_input: User's response.
@@ -608,13 +608,13 @@ class MappingFlow:
         self._state.add_message("user", user_input)
         url = user_input.strip()
         if url:
-            self._state.dcat_source_url = url
-            logger.info("User provided DCAT source URL: %s", url)
+            self._state.context_source_url = url
+            logger.info("User provided context source URL: %s", url)
         else:
-            logger.info("User skipped DCAT source URL")
+            logger.info("User skipped context source URL")
 
         # Ask whether to include the context file(s) in the PR
-        self._state.current_state = FlowState.ASK_DCAT_INCLUSION
+        self._state.current_state = FlowState.ASK_CONTEXT_INCLUSION
         self._state.awaiting_user_input = True
         self._state.add_message(
             "assistant",
@@ -623,8 +623,8 @@ class MappingFlow:
 
         return self._state
 
-    def _handle_dcat_inclusion(self, user_input: str) -> GraphState:
-        """Handle DCAT inclusion confirmation (yes/no).
+    def _handle_context_inclusion(self, user_input: str) -> GraphState:
+        """Handle context file inclusion confirmation (yes/no).
 
         Args:
             user_input: User's response.
@@ -636,15 +636,15 @@ class MappingFlow:
         answer = user_input.lower().strip()
 
         if answer in ("yes", "y"):
-            self._state.include_dcat_in_pr = True
-            logger.info("User chose to include DCAT metadata in PR")
+            self._state.include_context_in_pr = True
+            logger.info("User chose to include context files in PR")
         elif answer in ("no", "n"):
-            self._state.include_dcat_in_pr = False
-            logger.info("User chose not to include DCAT metadata in PR")
+            self._state.include_context_in_pr = False
+            logger.info("User chose not to include context files in PR")
         else:
             # Unrecognised — prompt again
             self._state.awaiting_user_input = True
-            logger.info("Unrecognised DCAT inclusion input, prompting again")
+            logger.info("Unrecognised context inclusion input, prompting again")
             return self._state
 
         # Build and show PR preview
@@ -723,17 +723,17 @@ class MappingFlow:
             and self._state.awaiting_user_input
         )
 
-    def is_awaiting_dcat_url(self) -> bool:
-        """Check if flow is waiting for DCAT source URL input."""
+    def is_awaiting_context_url(self) -> bool:
+        """Check if flow is waiting for context source URL input."""
         return (
-            self._state.current_state == FlowState.ASK_DCAT_URL
+            self._state.current_state == FlowState.ASK_CONTEXT_URL
             and self._state.awaiting_user_input
         )
 
-    def is_awaiting_dcat_inclusion(self) -> bool:
-        """Check if flow is waiting for DCAT inclusion confirmation."""
+    def is_awaiting_context_inclusion(self) -> bool:
+        """Check if flow is waiting for context inclusion confirmation."""
         return (
-            self._state.current_state == FlowState.ASK_DCAT_INCLUSION
+            self._state.current_state == FlowState.ASK_CONTEXT_INCLUSION
             and self._state.awaiting_user_input
         )
 

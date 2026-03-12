@@ -383,11 +383,10 @@ class TestGitHubService:
             mapping_name="with-dcat",
             rml_content="@prefix rr: <...> .",
             description="Test with DCAT",
-            dcat_content="@prefix dcat: <...> .",
-            dcat_filename="metadata.ttl",
+            context_files=[{"filename": "metadata.ttl", "content": "@prefix dcat: <...> ."}],
         )
 
-        # Should have two create_file calls: RML + DCAT
+        # Should have two create_file calls: RML + context file
         assert mock_repo.create_file.call_count == 2
         calls = mock_repo.create_file.call_args_list
 

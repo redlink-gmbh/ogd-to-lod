@@ -20,7 +20,6 @@ from ogd_to_lod.logging import get_logger
 from ogd_to_lod.parsers import (
     CSVParseError,
     ContextParseError,
-    dcat_format_to_extension,
     parse_context,
     parse_csv,
 )
@@ -538,20 +537,12 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
 
     # Collect all context files for PR inclusion
     context_files_for_pr: list[dict] | None = None
-    if state.include_dcat_in_pr and state.context_raw_files:
-        context_files_for_pr = []
-        for raw in state.context_raw_files:
-            fname = raw.get("filename", "metadata")
-            content = raw.get("content", "")
-            if content:
-                context_files_for_pr.append({"filename": fname, "content": content})
-    elif state.include_dcat_in_pr and state.dcat_raw_content:
-        # Fallback for backward compat when context_raw_files not populated
-        fmt = state.dcat_source_format or "turtle"
-        context_files_for_pr = [{
-            "filename": f"metadata{dcat_format_to_extension(fmt)}",
-            "content": state.dcat_raw_content,
-        }]
+    if state.include_context_in_pr and state.context_raw_files:
+        context_files_for_pr = [
+            {"filename": raw.get("filename", "metadata"), "content": raw.get("content", "")}
+            for raw in state.context_raw_files
+            if raw.get("content")
+        ]
 
     # Create the PR
     try:
@@ -742,7 +733,7 @@ def _build_pr_description(state: GraphState, mapping_name: str) -> str:
         "dataset_name": dataset_name,
         "dataset_description": dataset_description,
         "csv_source": state.csv_source_url or "(not provided)",
-        "dcat_source": state.dcat_source_url or "(not provided)",
+        "dcat_source": state.context_source_url or "(not provided)",
         "context_files": context_files_str,
         "base_uri": f"`{state.base_uri}`" if state.base_uri else "",
         "mapping_structure": build_mapping_structure_section(

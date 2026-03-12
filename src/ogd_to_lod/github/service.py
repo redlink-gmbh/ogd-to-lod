@@ -76,9 +76,6 @@ class GitHubService:
         description: str,
         base_branch: str = "main",
         context_files: list[dict] | None = None,
-        # Legacy params kept for backward compatibility
-        dcat_content: str | None = None,
-        dcat_filename: str | None = None,
     ) -> PRResult:
         """Create a PR with a new RML mapping.
 
@@ -92,8 +89,6 @@ class GitHubService:
             base_branch: Branch to create PR against (default: main).
             context_files: Optional list of dicts with keys "filename" and
                 "content" for each context file to commit alongside the mapping.
-            dcat_content: Deprecated — use context_files instead.
-            dcat_filename: Deprecated — use context_files instead.
 
         Returns:
             PRResult with PR number, URL, and branch name.
@@ -109,10 +104,7 @@ class GitHubService:
         logger.info(f"Creating PR for mapping: {mapping_name}")
         logger.debug(f"Branch: {branch_name}, File: {file_path}")
 
-        # Normalise context files: merge legacy dcat_content param
         files_to_commit: list[dict] = list(context_files or [])
-        if dcat_content and dcat_filename and not files_to_commit:
-            files_to_commit.append({"filename": dcat_filename, "content": dcat_content})
 
         try:
             # Get the base branch reference
