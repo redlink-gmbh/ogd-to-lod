@@ -133,6 +133,24 @@ Each CSV row represents ONE cube:Observation. Each column is either:
 - Years: `xsd:gYear` (YYYY)
 - Date-times: `xsd:dateTime`
 
+### Template Literals (Constructing Values from Partial Column Data)
+
+When a column only contains part of a value (e.g., a year `1998`) but the mapping requires
+a complete typed literal (e.g., the year-end date `1998-12-31`), use a **template literal**:
+combine the column reference with fixed text inside the shorthand array.
+
+```yaml
+# Column 'jahr' contains "1998", map to year-end date "1998-12-31"
+- [ex-property:ZEIT, "$(jahr)-12-31", xsd:date]
+```
+
+A template literal is triggered when the object string mixes `$(col)` references with
+literal text. With a datatype in position [2], yarrrml-parser emits `rr:template` +
+`rr:termType rr:Literal`, producing a typed literal — not an IRI.
+
+Use this pattern whenever a dimension value requires padding, a fixed suffix/prefix, or
+unit embedding (e.g., `"$(year)-01-01"`, `"$(code)-CH"`).
+
 ## Output Format
 Provide ONLY the YARRRML in a fenced `yaml` code block. \
 Do not include any explanation outside the code block.
