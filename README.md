@@ -10,7 +10,7 @@ This tool helps transform Open Government Data (OGD) CSV files into Linked Open 
 2. Using AI to normalize context into a unified internal model — including per-column descriptions
 3. Using AI to propose YARRRML mappings targeting cube.link and schema.org vocabularies
 4. Validating mappings with a two-tier pipeline (YAML syntax check + Docker-based execution)
-5. Creating GitHub PRs with the generated `mapping.yarrrml.yaml` files
+5. Creating GitHub PRs with the generated `mapping.yarrrml.yaml` and the CSV source file
 
 ## Installation
 
@@ -74,6 +74,7 @@ The application uses a YAML configuration file (`config/config.yaml`) with envir
 github:
   repo: "org/repo-name"
   token: "${APP_GITHUB_TOKEN}"
+  mappings_folder: "mapping"  # Parent folder for all mappings (default: mapping)
 
 azure:
   endpoint: "${AZURE_OPENAI_ENDPOINT}"
@@ -93,7 +94,7 @@ rml:
 ## Usage
 
 ```bash
-ogd-to-lod <csv_path> [--context FILE ...]
+ogd-to-lod <csv_path> --output-folder <folder> [--context FILE ...]
 ```
 
 ### Arguments
@@ -101,6 +102,7 @@ ogd-to-lod <csv_path> [--context FILE ...]
 | Argument | Description |
 |----------|-------------|
 | `csv_path` | Path to the CSV file to map (required) |
+| `--output-folder FOLDER` | Target subfolder name in the mappings directory (required). The CSV and YARRRML files are pushed to `{mappings_folder}/{output-folder}/` in the repository. |
 | `--context FILE [FILE ...]` | One or more context files describing the dataset. Any format is accepted: DCAT (JSON-LD, Turtle, RDF/XML), Markdown, plain text, JSON, or combinations thereof. |
 
 ### Options
@@ -115,17 +117,22 @@ ogd-to-lod <csv_path> [--context FILE ...]
 
 ```bash
 # CSV only (no context)
-ogd-to-lod data/population.csv
+ogd-to-lod data/population.csv --output-folder bev-bestand-2024
 
 # With a DCAT metadata file
-ogd-to-lod data/population.csv --context metadata/population.dcat.jsonld
+ogd-to-lod data/population.csv --output-folder bev-bestand-2024 --context metadata/population.dcat.jsonld
 
 # With multiple context files (DCAT + column documentation)
-ogd-to-lod data/population.csv --context metadata/population.dcat.ttl docs/columns.md
+ogd-to-lod data/population.csv --output-folder bev-bestand-2024 --context metadata/population.dcat.ttl docs/columns.md
 
 # Override base URI
-ogd-to-lod data/population.csv --context metadata.ttl --base-uri https://example.org/data/
+ogd-to-lod data/population.csv --output-folder bev-bestand-2024 --context metadata.ttl --base-uri https://example.org/data/
 ```
+
+The resulting PR will contain two files in `{mappings_folder}/{output-folder}/`:
+
+- `mapping.yarrrml.yaml` — the generated YARRRML mapping
+- `{csv_filename}` — the CSV source file
 
 ### Context Files
 
