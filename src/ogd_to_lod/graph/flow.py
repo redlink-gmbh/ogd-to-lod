@@ -348,6 +348,7 @@ class MappingFlow:
         csv_path: str,
         context_paths: list[str] | None = None,
         base_uri: str | None = None,
+        output_folder: str | None = None,
     ) -> GraphState:
         """Start the mapping flow.
 
@@ -366,6 +367,7 @@ class MappingFlow:
             csv_path=csv_path,
             context_paths=context_paths or [],
             base_uri=base_uri,
+            output_folder=output_folder,
         )
 
         # Run until we need user input
@@ -394,9 +396,6 @@ class MappingFlow:
         # Handle source URL and context inclusion states
         if self._state.current_state == FlowState.ASK_CSV_URL:
             return self._handle_csv_url(user_input)
-
-        if self._state.current_state == FlowState.ASK_CONTEXT_INCLUSION:
-            return self._handle_context_inclusion(user_input)
 
         # Handle PR confirmation if in PREVIEW state
         if self._state.current_state == FlowState.PREVIEW:
@@ -576,45 +575,7 @@ class MappingFlow:
         else:
             logger.info("User skipped CSV source URL")
 
-        # If context files were provided, ask whether to include them in the PR
-        if self._state.context_paths:
-            self._state.current_state = FlowState.ASK_CONTEXT_INCLUSION
-            self._state.awaiting_user_input = True
-            self._state.add_message(
-                "assistant",
-                "Include the context/metadata file(s) in the PR? (yes/no):",
-            )
-        else:
-            # No context files — go straight to preview
-            self._state = preview_node(self._state, self._ai_service)
-
-        return self._state
-
-    def _handle_context_inclusion(self, user_input: str) -> GraphState:
-        """Handle context file inclusion confirmation (yes/no).
-
-        Args:
-            user_input: User's response.
-
-        Returns:
-            Updated state.
-        """
-        self._state.add_message("user", user_input)
-        answer = user_input.lower().strip()
-
-        if answer in ("yes", "y"):
-            self._state.include_context_in_pr = True
-            logger.info("User chose to include context files in PR")
-        elif answer in ("no", "n"):
-            self._state.include_context_in_pr = False
-            logger.info("User chose not to include context files in PR")
-        else:
-            # Unrecognised — prompt again
-            self._state.awaiting_user_input = True
-            logger.info("Unrecognised context inclusion input, prompting again")
-            return self._state
-
-        # Build and show PR preview
+        # Go straight to preview
         self._state = preview_node(self._state, self._ai_service)
 
         return self._state
@@ -687,13 +648,6 @@ class MappingFlow:
         """Check if flow is waiting for CSV source URL input."""
         return (
             self._state.current_state == FlowState.ASK_CSV_URL
-            and self._state.awaiting_user_input
-        )
-
-    def is_awaiting_context_inclusion(self) -> bool:
-        """Check if flow is waiting for context inclusion confirmation."""
-        return (
-            self._state.current_state == FlowState.ASK_CONTEXT_INCLUSION
             and self._state.awaiting_user_input
         )
 

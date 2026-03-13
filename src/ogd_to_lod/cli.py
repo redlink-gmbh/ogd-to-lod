@@ -97,6 +97,15 @@ def main() -> int:
             "(DCAT, freetext, Markdown, JSON, etc.)"
         ),
     )
+    parser.add_argument(
+        "--output-folder",
+        "-o",
+        required=True,
+        help=(
+            "Folder name within the mappings parent directory where the CSV "
+            "and YARRRML files will be pushed (required)"
+        ),
+    )
     args = parser.parse_args()
 
     # Load configuration
@@ -134,6 +143,7 @@ def main() -> int:
             csv_path=args.csv_path,
             context_paths=args.context_paths or [],
             base_uri=args.base_uri,
+            output_folder=args.output_folder,
         )
     except Exception as e:
         logger.exception("Failed to start mapping flow")
@@ -166,8 +176,6 @@ def main() -> int:
             prompt = f"Dataset name ['{name}']: "
         elif flow.is_awaiting_csv_url():
             prompt = "Public CSV source URL (Enter to skip): "
-        elif flow.is_awaiting_context_inclusion():
-            prompt = "Include context/metadata file(s) in PR? (yes/no): "
         elif flow.is_awaiting_pr_confirmation():
             prompt = "Push to GitHub and create PR? (yes/no): "
         else:

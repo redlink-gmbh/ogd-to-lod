@@ -535,14 +535,11 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
     # Build PR description
     pr_description = _build_pr_description(state, mapping_name)
 
-    # Collect all context files for PR inclusion
-    context_files_for_pr: list[dict] | None = None
-    if state.include_context_in_pr and state.context_raw_files:
-        context_files_for_pr = [
-            {"filename": raw.get("filename", "metadata"), "content": raw.get("content", "")}
-            for raw in state.context_raw_files
-            if raw.get("content")
-        ]
+    # Determine output folder (CLI param) and CSV details
+    output_folder = state.output_folder or mapping_name
+    csv_path_obj = Path(state.csv_path)
+    csv_filename = csv_path_obj.name
+    csv_content = csv_path_obj.read_text(encoding="utf-8")
 
     # Create the PR
     try:
@@ -551,7 +548,10 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
             mapping_name=mapping_name,
             rml_content=state.generated_rml,
             description=pr_description,
-            context_files=context_files_for_pr,
+            output_folder=output_folder,
+            csv_filename=csv_filename,
+            csv_content=csv_content,
+            mappings_folder=config.github.mappings_folder,
         )
 
         state.pr_url = result.pr_url

@@ -15,6 +15,7 @@ class GitHubConfig:
 
     repo: str
     token: str
+    mappings_folder: str = "mapping"
 
 
 @dataclass
@@ -165,6 +166,7 @@ def load_config(config_path: str | Path) -> Config:
         github = GitHubConfig(
             repo=github_repo,
             token=github_data.get("token", ""),
+            mappings_folder=github_data.get("mappings_folder", "mapping"),
         )
         if not github.repo:
             raise ValueError("github.repo is required")

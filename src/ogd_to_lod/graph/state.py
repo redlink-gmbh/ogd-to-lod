@@ -16,7 +16,6 @@ class FlowState(Enum):
     VALIDATE = "validate"
     CONFIRM_NAME = "confirm_name"
     ASK_CSV_URL = "ask_csv_url"
-    ASK_CONTEXT_INCLUSION = "ask_context_inclusion"
     PREVIEW = "preview"
     CREATE_PR = "create_pr"
     END = "end"
@@ -99,6 +98,7 @@ class GraphState:
     csv_path: str | None = None
     context_paths: list[str] = field(default_factory=list)
     base_uri: str | None = None
+    output_folder: str | None = None
 
     # Parsed data (populated in ANALYZE state)
     csv_schema: dict[str, Any] | None = None
@@ -129,8 +129,6 @@ class GraphState:
     # Source URL (populated in ASK_CSV_URL state)
     csv_source_url: str | None = None
 
-    # Context file inclusion in PR (populated in ASK_CONTEXT_INCLUSION state)
-    include_context_in_pr: bool = False
     context_raw_files: list[dict] = field(default_factory=list)  # all context files
 
     # PR description (populated in PREVIEW state)
@@ -164,6 +162,7 @@ class GraphState:
             "csv_path": self.csv_path,
             "context_paths": self.context_paths,
             "base_uri": self.base_uri,
+            "output_folder": self.output_folder,
             "csv_schema": self.csv_schema,
             "dataset_context": self.dataset_context,
             "parsed_summary": self.parsed_summary,
@@ -177,7 +176,6 @@ class GraphState:
             "mapping_decisions": self.mapping_decisions,
             "mapping_name": self.mapping_name,
             "csv_source_url": self.csv_source_url,
-            "include_context_in_pr": self.include_context_in_pr,
             "context_raw_files": self.context_raw_files,
             "pr_description": self.pr_description,
             "validation_error": self.validation_error,

@@ -38,8 +38,6 @@ class GitHubService:
     - Creating pull requests with descriptions
     """
 
-    MAPPINGS_FOLDER = "mappings"
-
     def __init__(self, config: GitHubConfig):
         """Initialize the GitHub service.
 
@@ -74,21 +72,27 @@ class GitHubService:
         mapping_name: str,
         rml_content: str,
         description: str,
+        output_folder: str,
+        csv_filename: str,
+        csv_content: str,
         base_branch: str = "main",
-        context_files: list[dict] | None = None,
+        mappings_folder: str = "mapping",
     ) -> PRResult:
         """Create a PR with a new RML mapping.
 
-        Creates a new branch, commits the RML file (and optionally all
-        context/metadata files), and opens a pull request.
+        Creates a new branch, commits the YARRRML mapping file and the CSV
+        source file (and optionally context/metadata files), and opens a
+        pull request.
 
         Args:
-            mapping_name: Name for the mapping (used for branch and file names).
-            rml_content: The RML Turtle content to commit.
+            mapping_name: Name for the mapping (used in PR title and commit messages).
+            rml_content: The YARRRML mapping content to commit.
             description: Human-readable description for the PR body.
+            output_folder: Subfolder name within the mappings parent folder.
+            csv_filename: Filename for the CSV file in the repository.
+            csv_content: Content of the CSV file to commit.
             base_branch: Branch to create PR against (default: main).
-            context_files: Optional list of dicts with keys "filename" and
-                "content" for each context file to commit alongside the mapping.
+            mappings_folder: Parent folder in the repository (default: mapping).
 
         Returns:
             PRResult with PR number, URL, and branch name.
@@ -96,15 +100,15 @@ class GitHubService:
         Raises:
             PRCreationError: If any step of PR creation fails.
         """
-        # Sanitize mapping name for use in branch and file names
-        safe_name = self._sanitize_name(mapping_name)
-        branch_name = f"mapping/{safe_name}"
-        file_path = f"{self.MAPPINGS_FOLDER}/{safe_name}/mapping.yarrrml.yaml"
+        # Sanitize output folder for use in branch and file paths
+        safe_folder = self._sanitize_name(output_folder)
+        branch_name = f"mapping/{safe_folder}"
+        folder_path = f"{mappings_folder}/{safe_folder}"
+        yarrrml_path = f"{folder_path}/mapping.yarrrml.yaml"
+        csv_path_in_repo = f"{folder_path}/{csv_filename}"
 
         logger.info(f"Creating PR for mapping: {mapping_name}")
-        logger.debug(f"Branch: {branch_name}, File: {file_path}")
-
-        files_to_commit: list[dict] = list(context_files or [])
+        logger.debug(f"Branch: {branch_name}, Folder: {folder_path}")
 
         try:
             # Get the base branch reference
@@ -116,20 +120,17 @@ class GitHubService:
             self._create_branch(branch_name, base_sha)
 
             # Commit the YARRRML mapping file
-            commit_message = f"Add YARRRML mapping: {mapping_name}"
-            self._commit_file(branch_name, file_path, rml_content, commit_message)
+            self._commit_file(
+                branch_name, yarrrml_path, rml_content,
+                f"Add YARRRML mapping: {mapping_name}"
+            )
 
-            # Commit all context/metadata files
-            for ctx_file in files_to_commit:
-                fname = ctx_file.get("filename", "metadata")
-                fcontent = ctx_file.get("content", "")
-                if fcontent:
-                    ctx_path = f"{self.MAPPINGS_FOLDER}/{safe_name}/{fname}"
-                    self._commit_file(
-                        branch_name, ctx_path, fcontent,
-                        f"Add context file: {fname}"
-                    )
-                    logger.debug(f"Committed context file: {ctx_path}")
+            # Commit the CSV source file
+            self._commit_file(
+                branch_name, csv_path_in_repo, csv_content,
+                f"Add CSV source: {csv_filename}"
+            )
+            logger.debug(f"Committed CSV file: {csv_path_in_repo}")
 
             # Create the PR
             pr = self._create_pr(
