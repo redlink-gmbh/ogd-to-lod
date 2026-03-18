@@ -41,6 +41,10 @@ class DimensionProposal:
     dimension_type: str  # temporal, spatial, categorical
     granularity: str | None = None
     hierarchy: str | None = None
+    datatype: str | None = None  # e.g. xsd:dateTime, xsd:date
+    source: str | None = None  # "csv" (default) or "context"
+    static_value: str | None = None  # context field name when source is "context"
+    context_label: str | None = None  # context field providing label/definition
 
 
 @dataclass
@@ -50,6 +54,7 @@ class MeasureProposal:
     column: str
     unit: str | None = None
     aggregation: str | None = None
+    context_label: str | None = None  # context field providing label/definition
 
 
 @dataclass
@@ -58,6 +63,7 @@ class MappingProposal:
 
     dimensions: list[DimensionProposal] = field(default_factory=list)
     measures: list[MeasureProposal] = field(default_factory=list)
+    skipped_columns: list[str] = field(default_factory=list)
     status: str = "pending"  # pending, approved, refining
 
     def to_dict(self) -> dict[str, Any]:
@@ -69,6 +75,10 @@ class MappingProposal:
                     "type": d.dimension_type,
                     "granularity": d.granularity,
                     "hierarchy": d.hierarchy,
+                    "datatype": d.datatype,
+                    "source": d.source,
+                    "static_value": d.static_value,
+                    "context_label": d.context_label,
                 }
                 for d in self.dimensions
             ],
@@ -77,9 +87,11 @@ class MappingProposal:
                     "column": m.column,
                     "unit": m.unit,
                     "aggregation": m.aggregation,
+                    "context_label": m.context_label,
                 }
                 for m in self.measures
             ],
+            "skipped_columns": self.skipped_columns,
             "status": self.status,
         }
 

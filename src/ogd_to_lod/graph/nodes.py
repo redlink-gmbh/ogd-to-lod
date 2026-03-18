@@ -176,22 +176,37 @@ Identify:
 1. Which columns should be dimensions (and their types: temporal, spatial, or categorical)
 2. Which columns should be measures (with units if applicable)
 3. Any hierarchies that should be created
+4. Which columns should be skipped (not mapped)
+5. Whether any dimension value comes from context metadata (not from a CSV column)
+6. Whether any context field (label, description) is used to enrich a property definition
 
 Provide your proposal in YAML format following this exact structure:
 
 ```yaml
 dimensions:
-  - column: <column_name>
+  - column: <column_name or property name like RAUM/ZEIT>
     type: <temporal|spatial|categorical>
     granularity: <optional: year, month, day, etc.>
     hierarchy: <optional: hierarchy name>
+    datatype: <optional: xsd:dateTime, xsd:date, xsd:string, etc.>
+    source: <optional: csv (default) or context>
+    static_value: <optional: the context field name (e.g. spatial_coverage) when source is context>
+    context_label: <optional: context field providing the property label/definition>
 measures:
   - column: <column_name>
     unit: <optional: unit of measurement>
     aggregation: <optional: sum, avg, count, etc.>
+    context_label: <optional: context field providing the property label/definition>
+skipped_columns:
+  - <column_name>
 ```
 
-Important: Use exactly the keys shown above (dimensions, measures, column, type, unit, etc.)."""
+Important:
+- Use exactly the keys shown above (dimensions, measures, skipped_columns, column, type, unit, etc.)
+- List ALL columns that should not be mapped under skipped_columns
+- Use source: context and static_value when a property value is taken from context metadata (not from a CSV column)
+- Use datatype for temporal columns that need a specific XSD type (e.g. xsd:dateTime)
+- Use context_label to indicate which context field provides the human-readable label or definition for a property"""
 
     logger.debug("Sending proposal request to AI")
     response = ai_service.send_message(prompt)
@@ -658,12 +673,23 @@ def _format_proposal_summary(proposal: MappingProposal) -> str:
                 details.append(f"granularity: {dim.granularity}")
             if dim.hierarchy:
                 details.append(f"hierarchy: {dim.hierarchy}")
+            if dim.datatype:
+                details.append(f"datatype: `{dim.datatype}`")
 
             if details:
                 dim_desc += f" — {', '.join(details)}"
 
-            # Add note about resource values
-            dim_desc += f"\n  - Values: `ex-code:{{{{value}}}}` (resources of type `schema:DefinedTerm`)"
+            # Show data source
+            if dim.source == "context":
+                static_ref = f" (`{dim.static_value}`)" if dim.static_value else ""
+                dim_desc += f"\n  - Source: static value from context metadata{static_ref}"
+            else:
+                # Add note about resource values from CSV
+                dim_desc += f"\n  - Values: `ex-code:{{{{value}}}}` (resources of type `schema:DefinedTerm`)"
+
+            # Show context label/definition enrichment
+            if dim.context_label:
+                dim_desc += f"\n  - Property definition from context: `{dim.context_label}`"
 
             lines.append(dim_desc)
         lines.append("")
@@ -685,7 +711,18 @@ def _format_proposal_summary(proposal: MappingProposal) -> str:
             if details:
                 measure_desc += f" — {', '.join(details)}"
 
+            if measure.context_label:
+                measure_desc += f"\n  - Property definition from context: `{measure.context_label}`"
+
             lines.append(measure_desc)
+        lines.append("")
+
+    if proposal.skipped_columns:
+        lines.append("### Skipped Columns")
+        lines.append("These columns will not be included in the mapping:")
+        lines.append("")
+        for col in proposal.skipped_columns:
+            lines.append(f"- ~~`{col}`~~")
         lines.append("")
 
     # Add explanation
@@ -873,6 +910,10 @@ def _parse_proposal(data: dict[str, Any]) -> MappingProposal:
             dimension_type=str(dim_type).lower(),
             granularity=dim_data.get("granularity"),
             hierarchy=dim_data.get("hierarchy"),
+            datatype=dim_data.get("datatype"),
+            source=dim_data.get("source"),
+            static_value=dim_data.get("static_value"),
+            context_label=dim_data.get("context_label"),
         )
         if dim.column:  # Only add if column name exists
             proposal.dimensions.append(dim)
@@ -902,9 +943,20 @@ def _parse_proposal(data: dict[str, Any]) -> MappingProposal:
             column=str(column),
             unit=measure_data.get("unit"),
             aggregation=measure_data.get("aggregation") or measure_data.get("agg"),
+            context_label=measure_data.get("context_label"),
         )
         if measure.column:  # Only add if column name exists
             proposal.measures.append(measure)
+
+    # Parse skipped columns
+    skipped_data = (
+        data.get("skipped_columns")
+        or data.get("skipped")
+        or data.get("skip")
+        or []
+    )
+    if isinstance(skipped_data, list):
+        proposal.skipped_columns = [str(c) for c in skipped_data if c]
 
     return proposal
 
@@ -1207,6 +1259,10 @@ def _parse_yaml_line_by_line(yaml_content: str) -> MappingProposal | None:
                 dimension_type=current_item.get('type', 'categorical'),
                 granularity=current_item.get('granularity'),
                 hierarchy=current_item.get('hierarchy'),
+                datatype=current_item.get('datatype'),
+                source=current_item.get('source'),
+                static_value=current_item.get('static_value'),
+                context_label=current_item.get('context_label'),
             )
             if dim.column:
                 proposal.dimensions.append(dim)
@@ -1215,9 +1271,14 @@ def _parse_yaml_line_by_line(yaml_content: str) -> MappingProposal | None:
                 column=current_item.get('column', ''),
                 unit=current_item.get('unit'),
                 aggregation=current_item.get('aggregation'),
+                context_label=current_item.get('context_label'),
             )
             if measure.column:
                 proposal.measures.append(measure)
+        elif current_section == 'skipped_columns':
+            col = current_item.get('column', '')
+            if col:
+                proposal.skipped_columns.append(col)
         current_item = {}
 
     for line in lines:
@@ -1232,6 +1293,10 @@ def _parse_yaml_line_by_line(yaml_content: str) -> MappingProposal | None:
             save_current_item()
             current_section = 'measures'
             continue
+        elif stripped.startswith('skipped_columns:') or stripped.startswith('skipped:'):
+            save_current_item()
+            current_section = 'skipped_columns'
+            continue
 
         # Skip empty lines
         if not stripped:
@@ -1239,12 +1304,17 @@ def _parse_yaml_line_by_line(yaml_content: str) -> MappingProposal | None:
 
         # Detect list item start
         if stripped.startswith('- '):
+            rest = stripped[2:].strip()
+            if current_section == 'skipped_columns':
+                # Plain list item — the value is the column name
+                if rest and ':' not in rest:
+                    proposal.skipped_columns.append(rest)
+                    continue
             # Save previous item if exists
             save_current_item()
             current_item = {}
 
             # Parse inline key-value if present (e.g., "- column: year")
-            rest = stripped[2:].strip()
             if ':' in rest:
                 key, value = rest.split(':', 1)
                 current_item[key.strip()] = value.strip()
