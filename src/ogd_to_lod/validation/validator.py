@@ -173,8 +173,12 @@ class RMLValidator:
             yarrrml_file = Path(tmpdir.name) / "mapping.yarrrml.yaml"
             output_file = Path(tmpdir.name) / "output.ttl"
 
-            # Replace the CSV source placeholder with the sample filename
-            yarrrml_with_source = self._replace_csv_placeholder(rml_content, sample_filename)
+            # Replace the CSV source placeholder with the container-absolute path.
+            # The temp dir is mounted at /data inside Docker, so RMLMapper (which
+            # resolves paths relative to its working directory "/") must receive the
+            # full /data/sample.csv path — not just "sample.csv".
+            container_csv_path = f"/data/{sample_filename}"
+            yarrrml_with_source = self._replace_csv_placeholder(rml_content, container_csv_path)
             yarrrml_file.write_text(yarrrml_with_source)
 
             try:
