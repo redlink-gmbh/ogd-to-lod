@@ -40,7 +40,7 @@ sources:
     referenceFormulation: csv
 ```
 
-Reference it in every mapping entry as `[csvSource~source]`.
+Reference it in every mapping entry as `- csvSource` (the source name, not an inline shorthand).
 
 ## Subject Template
 
@@ -76,7 +76,7 @@ typed dimension value resources. All mapping entries live under the top-level \
 mappings:
   observations:
     sources:
-      - [csvSource~source]
+      - csvSource
     s: ex-obs:$(YearCol)_$(RegionCodeCol)
     po:
       - [a, cube:Observation]
@@ -84,7 +84,7 @@ mappings:
       - [ex-property:RAUM, ex-code:$(RegionCodeCol)~iri]
   regionCodes:
     sources:
-      - [csvSource~source]
+      - csvSource
     s: ex-code:$(RegionCodeCol)
     po:
       - [a, schema:DefinedTerm]
