@@ -1,16 +1,27 @@
 # OGD to LOD
 
-Tool to create YARRRML (YAML-based RML) mappings for CSV files using generative AI.
+> **Prototype — version 0.1.** This tool is under active development. Expect rough edges, breaking changes, and incomplete features.
 
-## Overview
+AI-assisted tool that turns Open Government Data (OGD) CSV files into Linked Open Data (LOD) mappings — from raw spreadsheet to a validated YARRRML/RML mapping ready to publish, with minimal manual effort.
 
-This tool helps transform Open Government Data (OGD) CSV files into Linked Open Data (LOD) by:
+## Demo
 
-1. Analyzing CSV structure and optional dataset context (DCAT, Markdown, freetext, JSON, or any mix)
-2. Using AI to normalize context into a unified internal model — including per-column descriptions
-3. Using AI to propose YARRRML mappings targeting cube.link and schema.org vocabularies
-4. Validating mappings with a two-tier pipeline (YAML syntax check + Docker-based execution)
-5. Creating GitHub PRs with the generated `mapping.yarrrml.yaml` and the CSV source file
+[![OGD to LOD demo](https://img.youtube.com/vi/AbhaA7YhF3g/0.jpg)](https://www.youtube.com/watch?v=AbhaA7YhF3g)
+
+## What it does
+
+Publishing government data as Linked Open Data requires creating RDF mappings that describe how each CSV column maps to semantic concepts. This is tedious, error-prone, and requires both RDF expertise and deep knowledge of the dataset. **OGD to LOD automates this step.**
+
+Given a CSV file and optional metadata, the tool:
+
+1. **Parses** the CSV (auto-detects encoding and delimiter) and reads any provided context files (DCAT, Markdown, plain text, JSON — any mix)
+2. **Normalizes** context using AI into a unified internal model with per-column descriptions, inferring missing descriptions from column names and sample values
+3. **Proposes** a mapping structure (dimensions, measures, datatypes) for user review before generating anything
+4. **Generates** a YARRRML mapping targeting the [cube.link](https://cube.link) and [schema.org](https://schema.org) vocabularies
+5. **Validates** the mapping with a two-tier pipeline: YAML syntax check followed by a Docker-based yarrrml-parser + RMLMapper execution
+6. **Opens a GitHub PR** in the target mappings repository with the generated `mapping.yarrrml.yaml` and the CSV source file
+
+The result is a human-reviewable pull request that can be merged, adjusted, or rejected — the AI does the heavy lifting, a human stays in control.
 
 ## Installation
 

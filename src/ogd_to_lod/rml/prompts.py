@@ -150,6 +150,17 @@ Any element that contains spaces, brackets `[]`, colons `:`, or other special ch
 
 When in doubt, quote all three elements of every `po:` shorthand entry.
 
+**CRITICAL — `~iri` suffix and quoting**: The `~iri` suffix must always be \
+**inside** the quoted string, never after the closing quote:
+
+```yaml
+# WRONG — ~iri outside the quotes breaks YAML:
+- ["ex-property:RAUM", "ex-code:$(RegionCol)"~iri]
+
+# CORRECT — ~iri inside the quotes:
+- ["ex-property:RAUM", "ex-code:$(RegionCol)~iri"]
+```
+
 ### Key Dimensions vs Measures
 
 **Key dimensions** (region, year, category, etc.):
@@ -216,6 +227,15 @@ every element that contains spaces, brackets, colons, or dots:
 - ["ex-property:PM10_ug_m3", "$(PM10 [ug/m3])", xsd:decimal]
 ```
 Also ensure property URIs are IRI-safe (replace spaces/brackets with `_`).
+
+If the error mentions a flow sequence near a `~iri` suffix, the cause is `~iri` placed
+**outside** a quoted string. The `~iri` suffix must always be **inside** the quotes:
+```yaml
+# Wrong — ~iri outside the closing quote:
+- ["ex-property:RAUM", "ex-code:$(col)"~iri]
+# Correct — ~iri inside the quotes:
+- ["ex-property:RAUM", "ex-code:$(col)~iri"]
+```
 """
 
 RML_VALIDATION_PROMPT = """\
