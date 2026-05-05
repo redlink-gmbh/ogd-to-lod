@@ -790,7 +790,7 @@ class TestCreatePrNodeEnhancements:
     """Tests for create_pr_node using mapping_name and placeholder."""
 
     @patch("ogd_to_lod.graph.nodes.GitHubService")
-    def test_uses_state_mapping_name(self, mock_gh_cls, mock_config):
+    def test_uses_state_mapping_name(self, mock_gh_cls, mock_config, tmp_path):
         mock_service = MagicMock()
         mock_service.create_mapping_pr.return_value = MagicMock(
             pr_url="https://github.com/test/repo/pull/1",
@@ -798,8 +798,11 @@ class TestCreatePrNodeEnhancements:
         )
         mock_gh_cls.return_value = mock_service
 
+        csv_file = tmp_path / "file.csv"
+        csv_file.write_text("col1\nval\n")
+
         state = GraphState(
-            csv_path="/data/file.csv",
+            csv_path=str(csv_file),
             generated_rml='@prefix rml: <http://semweb.mmlab.be/ns/rml#> .\nex:M rml:logicalSource [ rml:source "file.csv" ].',
             mapping_name="my-mapping",
         )
@@ -808,7 +811,7 @@ class TestCreatePrNodeEnhancements:
         assert call_args.kwargs["mapping_name"] == "my-mapping"
 
     @patch("ogd_to_lod.graph.nodes.GitHubService")
-    def test_falls_back_to_csv_filename(self, mock_gh_cls, mock_config):
+    def test_falls_back_to_csv_filename(self, mock_gh_cls, mock_config, tmp_path):
         mock_service = MagicMock()
         mock_service.create_mapping_pr.return_value = MagicMock(
             pr_url="https://github.com/test/repo/pull/1",
@@ -816,8 +819,11 @@ class TestCreatePrNodeEnhancements:
         )
         mock_gh_cls.return_value = mock_service
 
+        csv_file = tmp_path / "fallback.csv"
+        csv_file.write_text("col1\nval\n")
+
         state = GraphState(
-            csv_path="/data/fallback.csv",
+            csv_path=str(csv_file),
             generated_rml='@prefix rml: <http://semweb.mmlab.be/ns/rml#> .\nex:M rml:logicalSource [ rml:source "fallback.csv" ].',
         )
         create_pr_node(state, mock_config)
@@ -825,7 +831,7 @@ class TestCreatePrNodeEnhancements:
         assert call_args.kwargs["mapping_name"] == "fallback"
 
     @patch("ogd_to_lod.graph.nodes.GitHubService")
-    def test_passes_rml_with_csv_source_placeholder(self, mock_gh_cls, mock_config):
+    def test_passes_rml_with_csv_source_placeholder(self, mock_gh_cls, mock_config, tmp_path):
         mock_service = MagicMock()
         mock_service.create_mapping_pr.return_value = MagicMock(
             pr_url="https://github.com/test/repo/pull/1",
@@ -833,8 +839,11 @@ class TestCreatePrNodeEnhancements:
         )
         mock_gh_cls.return_value = mock_service
 
+        csv_file = tmp_path / "test.csv"
+        csv_file.write_text("col1\nval\n")
+
         state = GraphState(
-            csv_path="/data/test.csv",
+            csv_path=str(csv_file),
             generated_rml='@prefix rml: <http://semweb.mmlab.be/ns/rml#> .\nex:M rml:logicalSource [ rml:source "{CSV_SOURCE}" ].',
             mapping_name="test",
         )
@@ -925,11 +934,22 @@ class TestNameConfirmationFlow:
 class TestPrConfirmationSimplified:
     """Tests for simplified PR confirmation (yes/no only, no custom-name branch)."""
 
-    def test_yes_creates_pr(self, mock_config, mock_ai_service):
+    @patch("ogd_to_lod.graph.nodes.GitHubService")
+    def test_yes_creates_pr(self, mock_gh_cls, mock_config, mock_ai_service, tmp_path):
+        mock_service = MagicMock()
+        mock_service.create_mapping_pr.return_value = MagicMock(
+            pr_url="https://github.com/test/repo/pull/1",
+            pr_number=1,
+        )
+        mock_gh_cls.return_value = mock_service
+
+        csv_file = tmp_path / "file.csv"
+        csv_file.write_text("col1\nval\n")
+
         flow = MappingFlow(mock_config, mock_ai_service)
         flow._state.current_state = FlowState.PREVIEW
         flow._state.generated_rml = "some rml"
-        flow._state.csv_path = "/data/file.csv"
+        flow._state.csv_path = str(csv_file)
         flow._state.mapping_name = "test"
         flow._state.awaiting_user_input = True
 
@@ -1017,7 +1037,7 @@ class TestCsvUrlFlow:
         assert result.csv_source_url == "https://example.com/data.csv"
         assert result.current_state == FlowState.PREVIEW
 
-    def test_with_dcat_goes_to_ask_dcat_url(self, mock_config, mock_ai_service):
+    def test_with_context_paths_still_goes_to_preview(self, mock_config, mock_ai_service):
         flow = MappingFlow(mock_config, mock_ai_service)
         flow._state.current_state = FlowState.ASK_CSV_URL
         flow._state.csv_path = "/data/file.csv"
@@ -1028,49 +1048,7 @@ class TestCsvUrlFlow:
         result = flow._handle_csv_url("https://example.com/data.csv")
 
         assert result.csv_source_url == "https://example.com/data.csv"
-        assert result.current_state == FlowState.ASK_CONTEXT_INCLUSION
-        assert result.awaiting_user_input is True
-
-
-
-class TestDcatInclusionFlow:
-    """Tests for the ASK_CONTEXT_INCLUSION state handler."""
-
-    def test_yes_includes_dcat_and_goes_to_preview(self, mock_config, mock_ai_service):
-        flow = MappingFlow(mock_config, mock_ai_service)
-        flow._state.current_state = FlowState.ASK_CONTEXT_INCLUSION
-        flow._state.generated_rml = "some rml"
-        flow._state.csv_path = "/data/file.csv"
-        flow._state.awaiting_user_input = True
-
-        result = flow._handle_context_inclusion("yes")
-
-        assert result.include_context_in_pr is True
         assert result.current_state == FlowState.PREVIEW
-
-    def test_no_excludes_dcat_and_goes_to_preview(self, mock_config, mock_ai_service):
-        flow = MappingFlow(mock_config, mock_ai_service)
-        flow._state.current_state = FlowState.ASK_CONTEXT_INCLUSION
-        flow._state.generated_rml = "some rml"
-        flow._state.csv_path = "/data/file.csv"
-        flow._state.awaiting_user_input = True
-
-        result = flow._handle_context_inclusion("no")
-
-        assert result.include_context_in_pr is False
-        assert result.current_state == FlowState.PREVIEW
-
-    def test_unrecognised_prompts_again(self, mock_config, mock_ai_service):
-        flow = MappingFlow(mock_config, mock_ai_service)
-        flow._state.current_state = FlowState.ASK_CONTEXT_INCLUSION
-        flow._state.generated_rml = "some rml"
-        flow._state.csv_path = "/data/file.csv"
-        flow._state.awaiting_user_input = True
-
-        result = flow._handle_context_inclusion("maybe")
-
-        assert result.awaiting_user_input is True
-        assert result.current_state == FlowState.ASK_CONTEXT_INCLUSION
 
 
 class TestContinueWithInputRouting:
@@ -1087,19 +1065,6 @@ class TestContinueWithInputRouting:
         result = flow.continue_with_input("https://example.com/data.csv")
 
         assert result.csv_source_url == "https://example.com/data.csv"
-
-    def test_routes_ask_dcat_inclusion(self, mock_config, mock_ai_service):
-        flow = MappingFlow(mock_config, mock_ai_service)
-        flow._state.current_state = FlowState.ASK_CONTEXT_INCLUSION
-        flow._state.csv_path = "/data/file.csv"
-        flow._state.generated_rml = "some rml"
-        flow._state.awaiting_user_input = True
-
-        result = flow.continue_with_input("yes")
-
-        assert result.include_context_in_pr is True
-        assert result.current_state == FlowState.PREVIEW
-
 
 class TestPrDescriptionUsesUrls:
     """Test that _build_pr_description uses source URLs when available."""
@@ -1144,10 +1109,3 @@ class TestIsAwaitingHelpers:
         flow._state.awaiting_user_input = True
         assert flow.is_awaiting_csv_url() is True
 
-    def test_is_awaiting_context_inclusion(self, mock_config, mock_ai_service):
-        flow = MappingFlow(mock_config, mock_ai_service)
-        assert flow.is_awaiting_context_inclusion() is False
-
-        flow._state.current_state = FlowState.ASK_CONTEXT_INCLUSION
-        flow._state.awaiting_user_input = True
-        assert flow.is_awaiting_context_inclusion() is True

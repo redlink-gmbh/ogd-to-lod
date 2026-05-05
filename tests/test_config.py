@@ -53,6 +53,8 @@ class TestLoadConfig:
 
     def test_load_valid_config(self, monkeypatch, tmp_path):
         """Test loading a valid configuration file."""
+        # Prevent .env's GITHUB_REPO from leaking in via load_dotenv()
+        monkeypatch.setenv("GITHUB_REPO", "")
         monkeypatch.setenv("TEST_APP_GITHUB_TOKEN", "gh_token")
         monkeypatch.setenv("TEST_AZURE_KEY", "azure_key")
 

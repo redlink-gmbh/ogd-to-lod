@@ -116,6 +116,9 @@ class TestGitHubService:
             mapping_name="test-mapping",
             rml_content="@prefix rr: <...> .",
             description="Test description",
+            output_folder="test-mapping",
+            csv_filename="data.csv",
+            csv_content="col1,col2\n1,2\n",
         )
 
         assert result.pr_number == 42
@@ -128,12 +131,16 @@ class TestGitHubService:
             sha="abc123",
         )
 
-        # Verify file was created
-        mock_repo.create_file.assert_called_once()
-        call_kwargs = mock_repo.create_file.call_args[1]
-        assert call_kwargs["path"] == "mappings/test-mapping/mapping.yarrrml.yaml"
-        assert call_kwargs["content"] == "@prefix rr: <...> ."
-        assert call_kwargs["branch"] == "mapping/test-mapping"
+        # Verify two files were committed (YARRRML + CSV)
+        assert mock_repo.create_file.call_count == 2
+        calls = mock_repo.create_file.call_args_list
+        rml_kwargs = calls[0][1]
+        csv_kwargs = calls[1][1]
+        assert rml_kwargs["path"] == "mapping/test-mapping/mapping.yarrrml.yaml"
+        assert rml_kwargs["content"] == "@prefix rr: <...> ."
+        assert rml_kwargs["branch"] == "mapping/test-mapping"
+        assert csv_kwargs["path"] == "mapping/test-mapping/data.csv"
+        assert csv_kwargs["content"] == "col1,col2\n1,2\n"
 
         # Verify PR was created
         mock_repo.create_pull.assert_called_once()
@@ -181,6 +188,9 @@ class TestGitHubService:
             mapping_name="existing-mapping",
             rml_content="@prefix rr: <...> .",
             description="Test description",
+            output_folder="existing-mapping",
+            csv_filename="data.csv",
+            csv_content="col1\nval\n",
         )
 
         # Should have tried to create first, then fallen back to edit
@@ -224,6 +234,9 @@ class TestGitHubService:
             mapping_name="rerun-mapping",
             rml_content="@prefix rr: <...> .",
             description="Updated description",
+            output_folder="rerun-mapping",
+            csv_filename="data.csv",
+            csv_content="col1\nval\n",
         )
 
         # Should have updated the existing PR
@@ -259,14 +272,16 @@ class TestGitHubService:
             mapping_name="update-mapping",
             rml_content="@prefix rr: <...> .",
             description="Updated mapping",
+            output_folder="update-mapping",
+            csv_filename="data.csv",
+            csv_content="col1\nval\n",
         )
 
-        # Should have updated the file
-        mock_repo.update_file.assert_called_once()
-        update_kwargs = mock_repo.update_file.call_args[1]
-        assert update_kwargs["sha"] == "file-sha-123"
+        # Both files exist → both should be updated, none created
+        assert mock_repo.update_file.call_count == 2
+        for call in mock_repo.update_file.call_args_list:
+            assert call[1]["sha"] == "file-sha-123"
 
-        # Should NOT have created a new file
         mock_repo.create_file.assert_not_called()
 
         assert result.pr_number == 44
@@ -290,6 +305,9 @@ class TestGitHubService:
                 mapping_name="error-mapping",
                 rml_content="@prefix rr: <...> .",
                 description="Test description",
+                output_folder="error-mapping",
+                csv_filename="data.csv",
+                csv_content="col1\nval\n",
             )
 
         assert "Failed to create PR" in str(exc_info.value)
@@ -321,6 +339,9 @@ class TestGitHubService:
             mapping_name="develop-mapping",
             rml_content="@prefix rr: <...> .",
             description="Test description",
+            output_folder="develop-mapping",
+            csv_filename="data.csv",
+            csv_content="col1\nval\n",
             base_branch="develop",
         )
 
@@ -333,7 +354,7 @@ class TestGitHubService:
         assert result.pr_number == 45
 
     def test_subfolder_layout(self, github_config, mock_github):
-        """Test that file path uses subfolder layout: mappings/{name}/mapping.yarrrml.yaml."""
+        """File paths use subfolder layout: {mappings_folder}/{output_folder}/<file>."""
         mock_repo = MagicMock()
         mock_github.return_value.get_repo.return_value = mock_repo
 
@@ -355,13 +376,18 @@ class TestGitHubService:
             mapping_name="my-dataset",
             rml_content="@prefix rr: <...> .",
             description="Test",
+            output_folder="my-dataset",
+            csv_filename="data.csv",
+            csv_content="col1\nval\n",
         )
 
-        call_kwargs = mock_repo.create_file.call_args[1]
-        assert call_kwargs["path"] == "mappings/my-dataset/mapping.yarrrml.yaml"
+        rml_call = mock_repo.create_file.call_args_list[0][1]
+        csv_call = mock_repo.create_file.call_args_list[1][1]
+        assert rml_call["path"] == "mapping/my-dataset/mapping.yarrrml.yaml"
+        assert csv_call["path"] == "mapping/my-dataset/data.csv"
 
-    def test_dcat_file_committed_alongside_rml(self, github_config, mock_github):
-        """Test that DCAT file is committed when content and filename provided."""
+    def test_csv_file_committed_alongside_rml(self, github_config, mock_github):
+        """The CSV source file is committed alongside the YARRRML mapping."""
         mock_repo = MagicMock()
         mock_github.return_value.get_repo.return_value = mock_repo
 
@@ -380,24 +406,22 @@ class TestGitHubService:
 
         service = GitHubService(github_config)
         service.create_mapping_pr(
-            mapping_name="with-dcat",
+            mapping_name="with-csv",
             rml_content="@prefix rr: <...> .",
-            description="Test with DCAT",
-            context_files=[{"filename": "metadata.ttl", "content": "@prefix dcat: <...> ."}],
+            description="Test with CSV",
+            output_folder="with-csv",
+            csv_filename="population.csv",
+            csv_content="year,value\n2024,100\n",
         )
 
-        # Should have two create_file calls: RML + context file
         assert mock_repo.create_file.call_count == 2
         calls = mock_repo.create_file.call_args_list
+        assert calls[0][1]["path"] == "mapping/with-csv/mapping.yarrrml.yaml"
+        assert calls[1][1]["path"] == "mapping/with-csv/population.csv"
+        assert calls[1][1]["content"] == "year,value\n2024,100\n"
 
-        rml_path = calls[0][1]["path"]
-        dcat_path = calls[1][1]["path"]
-        assert rml_path == "mappings/with-dcat/mapping.yarrrml.yaml"
-        assert dcat_path == "mappings/with-dcat/metadata.ttl"
-        assert calls[1][1]["content"] == "@prefix dcat: <...> ."
-
-    def test_no_dcat_file_when_not_provided(self, github_config, mock_github):
-        """Test that only RML file is committed when no DCAT content provided."""
+    def test_custom_mappings_folder(self, github_config, mock_github):
+        """Override the mappings_folder parent."""
         mock_repo = MagicMock()
         mock_github.return_value.get_repo.return_value = mock_repo
 
@@ -416,12 +440,15 @@ class TestGitHubService:
 
         service = GitHubService(github_config)
         service.create_mapping_pr(
-            mapping_name="no-dcat",
+            mapping_name="custom",
             rml_content="@prefix rr: <...> .",
-            description="Test without DCAT",
+            description="Test",
+            output_folder="custom",
+            csv_filename="data.csv",
+            csv_content="col1\nval\n",
+            mappings_folder="mappings",
         )
 
-        # Should have exactly one create_file call (RML only)
-        assert mock_repo.create_file.call_count == 1
-        call_kwargs = mock_repo.create_file.call_args[1]
-        assert call_kwargs["path"] == "mappings/no-dcat/mapping.yarrrml.yaml"
+        calls = mock_repo.create_file.call_args_list
+        assert calls[0][1]["path"] == "mappings/custom/mapping.yarrrml.yaml"
+        assert calls[1][1]["path"] == "mappings/custom/data.csv"
