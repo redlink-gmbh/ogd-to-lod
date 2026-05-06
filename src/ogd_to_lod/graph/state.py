@@ -134,6 +134,7 @@ class GraphState:
 
     # Generated artifacts (populated in GENERATE state)
     generated_rml: str | None = None
+    generated_metadata: str | None = None
     rdf_preview: str | None = None
     validation_error: str | None = None
     validation_retry_count: int = 0
@@ -191,6 +192,7 @@ class GraphState:
             "user_intent": self.user_intent.value,
             "awaiting_user_input": self.awaiting_user_input,
             "generated_rml": self.generated_rml,
+            "generated_metadata": self.generated_metadata,
             "rdf_preview": self.rdf_preview,
             "mapping_decisions": self.mapping_decisions,
             "mapping_name": self.mapping_name,

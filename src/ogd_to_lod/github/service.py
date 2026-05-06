@@ -75,6 +75,7 @@ class GitHubService:
         output_folder: str,
         csv_filename: str,
         csv_content: str,
+        metadata_content: str | None = None,
         base_branch: str = "main",
         mappings_folder: str = "mapping",
     ) -> PRResult:
@@ -91,6 +92,8 @@ class GitHubService:
             output_folder: Subfolder name within the mappings parent folder.
             csv_filename: Filename for the CSV file in the repository.
             csv_content: Content of the CSV file to commit.
+            metadata_content: Optional static metadata Turtle (cube:Cube +
+                ObservationSet) to commit as ``metadata.ttl``.
             base_branch: Branch to create PR against (default: main).
             mappings_folder: Parent folder in the repository (default: mapping).
 
@@ -131,6 +134,15 @@ class GitHubService:
                 f"Add CSV source: {csv_filename}"
             )
             logger.debug(f"Committed CSV file: {csv_path_in_repo}")
+
+            # Optionally commit the static metadata Turtle
+            if metadata_content:
+                metadata_path = f"{folder_path}/metadata.ttl"
+                self._commit_file(
+                    branch_name, metadata_path, metadata_content,
+                    f"Add static metadata: {mapping_name}"
+                )
+                logger.debug(f"Committed metadata file: {metadata_path}")
 
             # Create the PR
             pr = self._create_pr(

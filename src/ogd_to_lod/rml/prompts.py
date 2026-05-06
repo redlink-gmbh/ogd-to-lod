@@ -91,6 +91,30 @@ mappings:
       - [schema:name, $(RegionCol)]
 ```
 
+## ObservationSet Link (REQUIRED)
+
+The static metadata file declares `<{base_uri}observation-set>` as a \
+`cube:ObservationSet`. The YARRRML must add a per-row mapping that links \
+this set to each generated observation via `cube:observation`. \
+Use the **same subject template** as the `observations` mapping for the \
+object position so the IRIs match exactly:
+
+```yaml
+  observationSetLink:
+    sources:
+      - csvSource
+    s: <{base_uri}observation-set>
+    po:
+      - [cube:observation, ex-obs:$(YearCol)_$(RegionCodeCol)~iri]
+```
+
+Notes:
+- The subject is a full IRI (angle brackets), not a prefixed name, because \
+`ex:` resolves to a prefix and the observation-set IRI lives directly under \
+the dataset base.
+- The `~iri` suffix on the object is mandatory so RMLMapper emits the \
+observation as a resource, not a literal.
+
 ## Approved Mapping Proposal
 {mapping_proposal}
 

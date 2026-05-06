@@ -17,6 +17,7 @@ from ogd_to_lod.graph.nodes import (
     analyze_node,
     propose_node,
     confirm_name_node,
+    generate_node,
     preview_node,
     create_pr_node,
     handle_user_input,
@@ -1108,4 +1109,29 @@ class TestIsAwaitingHelpers:
         flow._state.current_state = FlowState.ASK_CSV_URL
         flow._state.awaiting_user_input = True
         assert flow.is_awaiting_csv_url() is True
+
+
+class TestGenerateNodeProducesMetadata:
+    """generate_node populates state.generated_metadata for issue #41."""
+
+    @patch("ogd_to_lod.graph.nodes.RMLGenerator")
+    def test_metadata_is_generated(self, mock_gen_cls, mock_ai_service):
+        mock_gen_cls.return_value.generate.return_value = "mappings: {}"
+
+        proposal = MappingProposal(status="approved")
+        state = GraphState(
+            csv_path="/data/file.csv",
+            csv_schema={"columns": [], "source": "test", "total_rows": 1},
+            base_uri="https://example.org/datasets/foo/",
+            mapping_proposal=proposal,
+            dataset_context={"title": "Population", "description": "Yearly counts"},
+        )
+
+        result = generate_node(state, mock_ai_service)
+
+        assert result.generated_rml == "mappings: {}"
+        assert result.generated_metadata is not None
+        assert "<https://example.org/datasets/foo/> a cube:Cube" in result.generated_metadata
+        assert 'schema:name "Population"' in result.generated_metadata
+        assert "cube:observationSet <https://example.org/datasets/foo/observation-set>" in result.generated_metadata
 

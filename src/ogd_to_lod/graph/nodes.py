@@ -10,6 +10,7 @@ from ogd_to_lod.ai import AIService
 from ogd_to_lod.config import Config
 from ogd_to_lod.github import GitHubService, PRCreationError
 from ogd_to_lod.lookup import ReuseContext, SPARQLLookup
+from ogd_to_lod.metadata import generate_metadata
 from ogd_to_lod.github.pr_template import (
     build_csv_preview_section,
     build_mapping_structure_section,
@@ -450,6 +451,13 @@ def generate_node(state: GraphState, ai_service: AIService) -> GraphState:
 
         logger.info(f"Successfully generated YARRRML ({len(rml_content)} characters)")
 
+        # Generate companion static metadata Turtle (cube:Cube + ObservationSet)
+        state.generated_metadata = generate_metadata(state.base_uri, state.dataset_context)
+        logger.info(
+            "Generated metadata.ttl (%d characters)",
+            len(state.generated_metadata),
+        )
+
         # Transition to PREVIEW state
         state.current_state = FlowState.PREVIEW
         logger.info("Transitioning to PREVIEW state")
@@ -629,6 +637,7 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
             output_folder=output_folder,
             csv_filename=csv_filename,
             csv_content=csv_content,
+            metadata_content=state.generated_metadata,
             mappings_folder=config.github.mappings_folder,
         )
 

@@ -452,3 +452,71 @@ class TestGitHubService:
         calls = mock_repo.create_file.call_args_list
         assert calls[0][1]["path"] == "mappings/custom/mapping.yarrrml.yaml"
         assert calls[1][1]["path"] == "mappings/custom/data.csv"
+
+    def test_metadata_file_committed_when_provided(self, github_config, mock_github):
+        """metadata.ttl is committed alongside YARRRML and CSV when provided."""
+        mock_repo = MagicMock()
+        mock_github.return_value.get_repo.return_value = mock_repo
+
+        mock_branch = MagicMock()
+        mock_branch.commit.sha = "abc123"
+        mock_repo.get_branch.return_value = mock_branch
+
+        mock_repo.get_contents.side_effect = GithubException(
+            status=404, data={"message": "Not Found"}, headers={},
+        )
+
+        mock_pr = MagicMock()
+        mock_pr.number = 60
+        mock_pr.html_url = "https://github.com/test-org/test-repo/pull/60"
+        mock_repo.create_pull.return_value = mock_pr
+
+        service = GitHubService(github_config)
+        service.create_mapping_pr(
+            mapping_name="with-meta",
+            rml_content="mappings: {}",
+            description="Test",
+            output_folder="with-meta",
+            csv_filename="data.csv",
+            csv_content="col1\nval\n",
+            metadata_content="<https://ex.org/> a cube:Cube .",
+        )
+
+        assert mock_repo.create_file.call_count == 3
+        calls = mock_repo.create_file.call_args_list
+        assert calls[0][1]["path"] == "mapping/with-meta/mapping.yarrrml.yaml"
+        assert calls[1][1]["path"] == "mapping/with-meta/data.csv"
+        assert calls[2][1]["path"] == "mapping/with-meta/metadata.ttl"
+        assert calls[2][1]["content"] == "<https://ex.org/> a cube:Cube ."
+
+    def test_metadata_file_omitted_when_none(self, github_config, mock_github):
+        """No metadata.ttl is committed when metadata_content is None."""
+        mock_repo = MagicMock()
+        mock_github.return_value.get_repo.return_value = mock_repo
+
+        mock_branch = MagicMock()
+        mock_branch.commit.sha = "abc123"
+        mock_repo.get_branch.return_value = mock_branch
+
+        mock_repo.get_contents.side_effect = GithubException(
+            status=404, data={"message": "Not Found"}, headers={},
+        )
+
+        mock_pr = MagicMock()
+        mock_pr.number = 61
+        mock_pr.html_url = "https://github.com/test-org/test-repo/pull/61"
+        mock_repo.create_pull.return_value = mock_pr
+
+        service = GitHubService(github_config)
+        service.create_mapping_pr(
+            mapping_name="no-meta",
+            rml_content="mappings: {}",
+            description="Test",
+            output_folder="no-meta",
+            csv_filename="data.csv",
+            csv_content="col1\nval\n",
+        )
+
+        assert mock_repo.create_file.call_count == 2
+        paths = [c[1]["path"] for c in mock_repo.create_file.call_args_list]
+        assert all("metadata.ttl" not in p for p in paths)
