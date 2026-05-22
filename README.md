@@ -122,6 +122,7 @@ ogd-to-lod <csv_path> --output-folder <folder> [--context FILE ...]
 |------|-------|-------------|
 | `--config` | `-c` | Path to configuration file (default: `config/config.yaml`) |
 | `--base-uri` | `-b` | Base URI for generated resources (overrides config) |
+| `--local` | | Write results to `results/<timestamp>-<output-folder>/` instead of opening a GitHub PR |
 | `--help` | | Show help message |
 
 ### Examples
@@ -144,6 +145,22 @@ The resulting PR will contain two files in `{mappings_folder}/{output-folder}/`:
 
 - `mapping.yarrrml.yaml` — the generated YARRRML mapping
 - `{csv_filename}` — the CSV source file
+
+### Local mode (`--local`)
+
+Passing `--local` skips the GitHub PR and writes the results to a timestamped
+folder at the project root instead:
+
+```
+results/<YYYYMMDD-HHMMSS>-<output-folder>/
+├── mapping.yarrrml.yaml   # generated YARRRML mapping
+├── {csv_filename}          # CSV source file
+├── PR.md                   # PR description as Markdown
+└── metadata.ttl            # static metadata (when generated)
+```
+
+The `results/` folder is created on demand. No GitHub credentials are required
+in this mode.
 
 ### Context Files
 
@@ -198,6 +215,38 @@ pytest
 ruff check .
 ruff format .
 ```
+
+### Local Fuseki for testing
+
+A Docker Compose file under `tests/e2e/` starts a local Apache Jena Fuseki with an empty dataset named `test`, available at `http://localhost:3030/test`:
+
+```bash
+docker compose -f tests/e2e/docker-compose.yml up -d
+```
+
+### End-to-end smoke test for `--local` results
+
+Two helper scripts under `tests/e2e/` exercise a folder produced by `--local`
+against the local Fuseki:
+
+```bash
+# 1. Materialise the YARRRML mapping into observations.ttl
+#    (replaces {CSV_SOURCE} with data.csv, runs yarrrml-parser + RMLMapper)
+tests/e2e/run-mapping.sh results/<YYYYMMDD-HHMMSS>-<output-folder>
+
+# 2. Upload observations.ttl and metadata.ttl to the local Fuseki
+#    (defaults to http://localhost:3030/test/data, admin/admin)
+tests/e2e/post-to-fuseki.sh results/<YYYYMMDD-HHMMSS>-<output-folder>
+
+# Pass --clean to drop all existing triples (SPARQL `CLEAR ALL`) first:
+tests/e2e/post-to-fuseki.sh --clean results/<YYYYMMDD-HHMMSS>-<output-folder>
+```
+
+`run-mapping.sh` expects exactly one CSV in the folder and writes
+`observations.ttl` next to it. `post-to-fuseki.sh` uses Fuseki's Graph Store
+Protocol with HTTP basic auth; override `FUSEKI_URL` /
+`FUSEKI_UPDATE_URL` / `FUSEKI_USER` / `FUSEKI_PASSWORD` to point at a
+different endpoint.
 
 ## Project Structure
 

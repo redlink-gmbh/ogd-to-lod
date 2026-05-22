@@ -1,6 +1,7 @@
 """Node functions for the LangGraph conversation flow."""
 
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -577,10 +578,14 @@ def preview_node(state: GraphState, ai_service: AIService | None = None) -> Grap
 
     state.current_state = FlowState.PREVIEW
     state.awaiting_user_input = True
+    if state.local_output:
+        followup = "Save results locally? (yes/no)"
+    else:
+        followup = "Push to GitHub? (yes/no)"
     state.add_message(
         "assistant",
         f"Here is the PR that will be created:\n\n{state.pr_description}\n\n"
-        "Push to GitHub? (yes/no)"
+        f"{followup}"
     )
 
     logger.info("Awaiting push confirmation")
@@ -627,6 +632,32 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
     csv_filename = csv_path_obj.name
     csv_content = csv_path_obj.read_text(encoding="utf-8")
 
+    # Local-output mode: write artifacts to disk instead of opening a PR
+    if state.local_output:
+        try:
+            target_dir = _write_local_output(
+                mapping_name=mapping_name,
+                output_folder=output_folder,
+                rml_content=state.generated_rml,
+                pr_description=pr_description,
+                csv_filename=csv_filename,
+                csv_content=csv_content,
+                metadata_content=state.generated_metadata,
+            )
+            state.local_output_path = str(target_dir)
+            state.add_message(
+                "assistant",
+                f"Results saved locally to: {target_dir}",
+            )
+            logger.info(f"Local output written to: {target_dir}")
+            state.current_state = FlowState.END
+            logger.info("Flow completed successfully")
+        except OSError as e:
+            logger.error(f"Local output failed: {e}")
+            state.error_message = f"Failed to write local output: {e}"
+            state.current_state = FlowState.ERROR
+        return state
+
     # Create the PR
     try:
         github_service = GitHubService(config.github)
@@ -661,6 +692,39 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
         state.current_state = FlowState.ERROR
 
     return state
+
+
+def _write_local_output(
+    mapping_name: str,
+    output_folder: str,
+    rml_content: str,
+    pr_description: str,
+    csv_filename: str,
+    csv_content: str,
+    metadata_content: str | None,
+) -> Path:
+    """Write mapping artifacts to a timestamped folder under ``results/``.
+
+    The folder is created at the project root (current working directory) and
+    contains the YARRRML mapping, the source CSV, the PR description as
+    Markdown, and optionally the static metadata Turtle.
+
+    Returns:
+        The path of the timestamped folder that was created.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    target_dir = Path.cwd() / "results" / f"{timestamp}-{output_folder}"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    (target_dir / "mapping.yarrrml.yaml").write_text(rml_content, encoding="utf-8")
+    (target_dir / csv_filename).write_text(csv_content, encoding="utf-8")
+    (target_dir / "PR.md").write_text(
+        f"# {mapping_name}\n\n{pr_description}\n", encoding="utf-8"
+    )
+    if metadata_content:
+        (target_dir / "metadata.ttl").write_text(metadata_content, encoding="utf-8")
+
+    return target_dir
 
 
 def _serialize_dataset_context(context: Any) -> dict[str, Any]:

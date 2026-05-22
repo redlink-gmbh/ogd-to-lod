@@ -382,6 +382,7 @@ class MappingFlow:
         context_paths: list[str] | None = None,
         base_uri: str | None = None,
         output_folder: str | None = None,
+        local_output: bool = False,
     ) -> GraphState:
         """Start the mapping flow.
 
@@ -389,6 +390,8 @@ class MappingFlow:
             csv_path: Path to the CSV file.
             context_paths: Optional list of context files (any format).
             base_uri: Optional base URI for generated resources.
+            local_output: When True, write results to a local folder instead
+                of opening a GitHub PR.
 
         Returns:
             Current state after initialization and analysis.
@@ -401,6 +404,7 @@ class MappingFlow:
             context_paths=context_paths or [],
             base_uri=base_uri,
             output_folder=output_folder,
+            local_output=local_output,
         )
 
         # Run until we need user input
@@ -747,6 +751,18 @@ class MappingFlow:
     def has_created_pr(self) -> bool:
         """Check if PR has been created."""
         return self._state.pr_url is not None
+
+    def is_local_output(self) -> bool:
+        """Check if the flow is running in local-output mode."""
+        return self._state.local_output
+
+    def has_local_output(self) -> bool:
+        """Check if local-output files have been written."""
+        return self._state.local_output_path is not None
+
+    def get_local_output_path(self) -> str | None:
+        """Get the folder where local-output files were written."""
+        return self._state.local_output_path
 
     def get_pr_url(self) -> str | None:
         """Get the URL of the created PR."""

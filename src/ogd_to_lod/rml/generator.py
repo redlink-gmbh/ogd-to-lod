@@ -1,5 +1,6 @@
 """RML generation using AI service."""
 
+import re
 from typing import Any
 
 from ogd_to_lod.ai import AIService
@@ -12,6 +13,44 @@ logger = get_logger(__name__)
 # Placeholder for CSV source path in generated YARRRML
 # This should be replaced with the actual CSV path at deployment time
 CSV_SOURCE_PLACEHOLDER = "{CSV_SOURCE}"
+
+# Matches a bare <http(s)://…> IRI used as an object inside a po: shorthand
+# flow sequence: `[predicate, <iri>]` or `[predicate, <iri>, …]`.
+# Subject lines like `s: <iri>` are left untouched because they are not
+# inside a `[ … ]` flow sequence.
+_BARE_IRI_OBJECT_RE = re.compile(
+    r"(\[\s*[^,\[\]]+,\s*)<(https?://[^>\s]+)>(\s*[,\]])"
+)
+
+
+def _fix_bare_iri_objects(yarrrml: str) -> str:
+    """Rewrite bare <https://…> IRIs in po: shorthand objects.
+
+    The AI sometimes emits a bare angle-bracketed IRI as the object of a
+    ``po:`` shorthand list, e.g.::
+
+        - ["cube:dataSet", <https://example.org/observation-set>]
+
+    yarrrml-parser treats that as a plain string and RMLMapper URL-encodes
+    the angle brackets into the IRI, producing ``<%3Chttps://…%3E>``. The
+    correct form is a quoted IRI string with the ``~iri`` suffix::
+
+        - ["cube:dataSet", "https://example.org/observation-set~iri"]
+
+    Returns the YARRRML with every such occurrence rewritten. Logs a
+    warning per rewrite so the underlying prompt drift stays visible.
+    """
+    matches = list(_BARE_IRI_OBJECT_RE.finditer(yarrrml))
+    if not matches:
+        return yarrrml
+    for m in matches:
+        logger.warning(
+            "Rewriting bare angle-bracket IRI object in YARRRML: <%s> → "
+            '"%s~iri"',
+            m.group(2),
+            m.group(2),
+        )
+    return _BARE_IRI_OBJECT_RE.sub(r'\1"\2~iri"\3', yarrrml)
 
 
 class RMLGenerationError(Exception):
@@ -103,7 +142,7 @@ class RMLGenerator:
                     "Response did not contain a yaml code block."
                 )
 
-            rml_content = yaml_blocks[0]
+            rml_content = _fix_bare_iri_objects(yaml_blocks[0])
             logger.info(f"Generated YARRRML with {len(rml_content)} characters")
 
             return rml_content
@@ -148,7 +187,7 @@ class RMLGenerator:
                     "Response did not contain a yaml code block."
                 )
 
-            rml_content = yaml_blocks[0]
+            rml_content = _fix_bare_iri_objects(yaml_blocks[0])
             logger.info(f"Regenerated YARRRML with {len(rml_content)} characters")
 
             return rml_content

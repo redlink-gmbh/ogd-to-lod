@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from ogd_to_lod.config import Config, GitHubConfig, AzureOpenAIConfig, RMLConfig
 from ogd_to_lod.rml import RMLGenerator, RMLGenerationError, generate_rml
+from ogd_to_lod.rml.generator import _fix_bare_iri_objects
 from ogd_to_lod.rml.prompts import RML_CORRECTION_PROMPT, RML_GENERATION_PROMPT
 from ogd_to_lod.graph.state import (
     DimensionProposal,
@@ -472,3 +473,88 @@ class TestRegenerateNode:
 
         assert result.current_state == FlowState.ERROR
         assert "Failed to regenerate RML" in result.error_message
+
+
+class TestFixBareIriObjects:
+    """Tests for the bare-IRI-object sanitiser in generator.py."""
+
+    def test_rewrites_bare_iri_in_two_element_po(self):
+        src = (
+            '    po:\n'
+            '      - ["cube:dataSet", <https://example.org/observation-set>]\n'
+        )
+        out = _fix_bare_iri_objects(src)
+        assert "<https://example.org/observation-set>" not in out
+        assert '"https://example.org/observation-set~iri"' in out
+
+    def test_rewrites_bare_iri_in_three_element_po(self):
+        src = (
+            '      - ["cube:dataSet", <https://example.org/obs-set>, '
+            'something]\n'
+        )
+        out = _fix_bare_iri_objects(src)
+        assert '"https://example.org/obs-set~iri"' in out
+        assert ", something]" in out
+
+    def test_subject_line_untouched(self):
+        src = '    s: <https://example.org/observation-set>\n'
+        assert _fix_bare_iri_objects(src) == src
+
+    def test_prefixed_object_untouched(self):
+        src = '      - ["cube:dataSet", "ex:observation-set~iri"]\n'
+        assert _fix_bare_iri_objects(src) == src
+
+    def test_no_change_when_pattern_absent(self):
+        src = (
+            'prefixes:\n'
+            '  ex: "https://example.org/"\n'
+            'mappings:\n'
+            '  observations:\n'
+            '    s: ex-obs:$(year)\n'
+            '    po:\n'
+            '      - [a, cube:Observation]\n'
+            '      - ["ex-property:RAUM", "ex-code:$(col)~iri"]\n'
+        )
+        assert _fix_bare_iri_objects(src) == src
+
+    def test_rewrites_multiple_occurrences(self):
+        src = (
+            '      - ["cube:dataSet", <https://a.example/x>]\n'
+            '      - ["schema:isPartOf", <https://b.example/y>]\n'
+        )
+        out = _fix_bare_iri_objects(src)
+        assert '"https://a.example/x~iri"' in out
+        assert '"https://b.example/y~iri"' in out
+        assert "<https://a.example/x>" not in out
+        assert "<https://b.example/y>" not in out
+
+    def test_generator_applies_sanitiser_to_ai_output(self):
+        """End-to-end check that RMLGenerator.generate runs the sanitiser."""
+        from ogd_to_lod.ai import ParsedResponse
+
+        mock_ai = MagicMock()
+        bad_yarrrml = (
+            'prefixes:\n  ex: "https://example.org/"\n'
+            'mappings:\n  observations:\n    sources: [csvSource]\n'
+            '    s: ex-obs:$(year)\n'
+            '    po:\n'
+            '      - [a, cube:Observation]\n'
+            '      - ["cube:dataSet", '
+            '<https://example.org/observation-set>]\n'
+        )
+        mock_ai.send_message.return_value = (
+            "```yaml\n" + bad_yarrrml + "```\n"
+        )
+        parsed = MagicMock(spec=ParsedResponse)
+        parsed.get_yaml_blocks.return_value = [bad_yarrrml]
+        with patch("ogd_to_lod.rml.generator.AIService.parse_response",
+                   return_value=parsed):
+            gen = RMLGenerator(mock_ai)
+            out = gen.generate(
+                mapping_proposal={"dimensions": [], "measures": []},
+                csv_schema={"source": "x", "total_rows": 1, "columns": []},
+                csv_path="/tmp/x.csv",
+                base_uri="https://example.org/",
+            )
+        assert "<https://example.org/observation-set>" not in out
+        assert '"https://example.org/observation-set~iri"' in out

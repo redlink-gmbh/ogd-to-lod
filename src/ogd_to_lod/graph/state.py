@@ -115,6 +115,11 @@ class GraphState:
     base_uri: str | None = None
     output_folder: str | None = None
 
+    # When True, results are written to a local folder instead of a GitHub PR
+    local_output: bool = False
+    # Filesystem path where local results were written (set in CREATE_PR)
+    local_output_path: str | None = None
+
     # Parsed data (populated in ANALYZE state)
     csv_schema: dict[str, Any] | None = None
     dataset_context: dict[str, Any] | None = None
@@ -182,6 +187,8 @@ class GraphState:
             "context_paths": self.context_paths,
             "base_uri": self.base_uri,
             "output_folder": self.output_folder,
+            "local_output": self.local_output,
+            "local_output_path": self.local_output_path,
             "csv_schema": self.csv_schema,
             "dataset_context": self.dataset_context,
             "parsed_summary": self.parsed_summary,

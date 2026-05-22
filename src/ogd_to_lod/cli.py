@@ -106,6 +106,15 @@ def main() -> int:
             "and YARRRML files will be pushed (required)"
         ),
     )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help=(
+            "Write the generated files and the PR description to a local "
+            "'results/<timestamp>-<output-folder>/' folder instead of "
+            "opening a GitHub PR"
+        ),
+    )
     args = parser.parse_args()
 
     # Load configuration
@@ -144,6 +153,7 @@ def main() -> int:
             context_paths=args.context_paths or [],
             base_uri=args.base_uri,
             output_folder=args.output_folder,
+            local_output=args.local,
         )
     except Exception as e:
         logger.exception("Failed to start mapping flow")
@@ -177,7 +187,10 @@ def main() -> int:
         elif flow.is_awaiting_csv_url():
             prompt = "Public CSV source URL (Enter to skip): "
         elif flow.is_awaiting_pr_confirmation():
-            prompt = "Push to GitHub and create PR? (yes/no): "
+            if flow.is_local_output():
+                prompt = "Save results locally? (yes/no): "
+            else:
+                prompt = "Push to GitHub and create PR? (yes/no): "
         else:
             prompt = "Your response (or 'quit' to exit): "
 
@@ -280,6 +293,13 @@ def main() -> int:
                     print(f"PR #{flow.get_pr_number()}: {flow.get_pr_url()}")
                     break
 
+                # Check if local output was written
+                if flow.has_local_output():
+                    print("\n" + "=" * 60)
+                    print("Results saved locally!")
+                    print(f"Folder: {flow.get_local_output_path()}")
+                    break
+
             elif flow.get_validation_error():
                 print("\n" + "=" * 60)
                 print("Validation: FAILED")
@@ -297,9 +317,16 @@ def main() -> int:
 
         # Check if flow completed (user cancelled PR)
         if flow.is_complete():
-            if not flow.has_created_pr() and flow.has_generated_rml():
+            if (
+                not flow.has_created_pr()
+                and not flow.has_local_output()
+                and flow.has_generated_rml()
+            ):
                 print("\n" + "=" * 60)
-                print("RML mapping generated but PR creation was skipped.")
+                if flow.is_local_output():
+                    print("RML mapping generated but local save was skipped.")
+                else:
+                    print("RML mapping generated but PR creation was skipped.")
                 print("You can find the generated RML above.")
             break
 
