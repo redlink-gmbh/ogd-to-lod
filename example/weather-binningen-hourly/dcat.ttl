@@ -1,0 +1,50 @@
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix dc: <http://purl.org/dc/terms/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix vcard: <http://www.w3.org/2006/vcard/ns#> .
+@prefix schema: <http://schema.org/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+
+<https://data.bs.ch/api/v2/catalog/datasets/100051-lod-ki-test>
+    a dcat:Dataset ;
+    dc:description "Stündliche Messungen der [automatischen Wetterstation Basel-Binningen](https://www.meteoschweiz.admin.ch/home/messwerte.html?param=messnetz-automatisch&station=BAS). "@de ;
+    dc:identifier "100051-lod-ki-test@kanton-basel-stadt" ;
+    dc:issued "2019-11-06T00:00:00"^^xsd:dateTime ;
+    dc:modified "2026-01-20T08:20:47.599000+00:00"^^xsd:dateTime ;
+    dc:publisher <https://data.bs.ch/explore/?refine.publisher=MeteoSchweiz> ;
+    dcat:landingPage <https://data.bs.ch/explore/dataset/100051-lod-ki-test/> ;
+    dc:language <http://publications.europa.eu/resource/authority/language/DEU> ;
+    dc:title "LOD mit KI Test - Luftqualität Station Basel-Binningen"@de ;
+    dcat:keyword "Luft"@de, "Ozon"@de, "Stickstoffdioxid"@de, "Stickoxid"@de, "NO2"@de, "NOX"@de, "Feinstaub"@de, "Kohlenmonoxid"@de, "CO"@de, "Partikelzahlkonzentraion"@de, "Russ"@de, "Temperatur"@de, "Niederschlag"@de, "Globalstrahlung"@de ;
+    dc:accrualPeriodicity <http://publications.europa.eu/resource/authority/frequency/HOURLY> ;
+    dcat:contactPoint [
+          a vcard:Organization ;
+          vcard:fn "Open Data Basel-Stadt" ;
+          vcard:hasEmail <mailto:opendata@bs.ch>
+      ] ;
+    dcat:theme <http://opendata.swiss/themes/territory>, <http://publications.europa.eu/resource/authority/data-theme/HEAL>, <http://opendata.swiss/themes/tourism> ;
+    dc:relation <https://www.meteoschweiz.admin.ch/service-und-publikationen/applikationen/messwerte-und-messnetze.html#param=messnetz-automatisch&table=false&station=BAS> ;
+    dc:temporal [
+          a dc:PeriodOfTime ;
+          schema:startDate "2018-05-31T22:00:00+00:00"^^xsd:dateTime ;
+          schema:endDate "2026-01-13T23:00:00+00:00"^^xsd:dateTime
+      ] ;
+    dcat:distribution <https://data.bs.ch/api/explore/v2.1/catalog/datasets/100051-lod-ki-test/exports/csv?use_labels=true> .
+
+<https://data.bs.ch/explore/?refine.publisher=MeteoSchweiz>
+    a foaf:Agent ;
+    foaf:name "MeteoSchweiz"@de .
+
+<https://data.bs.ch/explore/dataset/100051-lod-ki-test/> a foaf:Document .
+<http://publications.europa.eu/resource/authority/language/DEU> a dc:LinguisticSystem .
+<https://data.bs.ch/api/explore/v2.1/catalog/datasets/100051-lod-ki-test/exports/csv?use_labels=true>
+    a dcat:Distribution ;
+    dcat:accessURL <https://data.bs.ch/api/explore/v2.1/catalog/datasets/100051-lod-ki-test/exports/csv?use_labels=true> ;
+    dc:title "csv"@de ;
+    dc:description "LOD mit KI Test - Luftqualität Station Basel-Binningen (csv)"@de ;
+    dc:format <http://publications.europa.eu/resource/authority/file-type/CSV> ;
+    dcat:mediaType "text/csv" ;
+    dc:language <http://publications.europa.eu/resource/authority/language/DEU> ;
+    dcat:downloadURL <https://data.bs.ch/api/explore/v2.1/catalog/datasets/100051-lod-ki-test/exports/csv?use_labels=true> ;
+    dc:issued "2019-11-06T00:00:00"^^xsd:dateTime ;
+    dc:modified "2026-01-20T08:20:47.599000+00:00"^^xsd:dateTime .

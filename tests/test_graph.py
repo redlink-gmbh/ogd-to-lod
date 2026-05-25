@@ -30,6 +30,7 @@ from ogd_to_lod.graph.nodes import (
     _fix_common_yaml_issues,
     _parse_yaml_line_by_line,
     _extract_proposal_from_text,
+    _write_local_output,
 )
 from ogd_to_lod.graph.flow import MappingFlow
 
@@ -748,6 +749,39 @@ class TestSuggestMappingName:
         # Should only contain lowercase, digits, hyphens
         assert all(c.isalnum() or c == "-" for c in name)
         assert name  # non-empty
+
+    def test_output_folder_preferred_over_title(self):
+        """The CLI --output-folder wins over the DCAT title."""
+        state = GraphState(
+            output_folder="weather-binningen-hourly",
+            csv_path="/data/file.csv",
+            dataset_context={"title": "LOD mit KI Test: Luftqualität Station Basel-Binningen"},
+        )
+        assert suggest_mapping_name(state) == "weather-binningen-hourly"
+
+    def test_output_folder_is_slugified(self):
+        state = GraphState(output_folder="Weather Binningen 2024")
+        assert suggest_mapping_name(state) == "weather-binningen-2024"
+
+
+class TestWriteLocalOutput:
+    """Tests for _write_local_output folder naming."""
+
+    def test_folder_name_is_slugified(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        target = _write_local_output(
+            mapping_name="Whatever",
+            output_folder="Weather Binningen 2024",
+            rml_content="mappings: {}\n",
+            pr_description="body",
+            csv_filename="data.csv",
+            csv_content="a,b\n1,2\n",
+            metadata_content=None,
+        )
+        assert target.name.endswith("-weather-binningen-2024")
+        assert (target / "mapping.yarrrml.yaml").exists()
+        assert (target / "data.csv").exists()
+        assert (target / "PR.md").exists()
 
 
 class TestConfirmNameNode:

@@ -7,6 +7,7 @@ from typing import Any
 
 import yaml
 
+from ogd_to_lod._slug import slugify
 from ogd_to_lod.ai import AIService
 from ogd_to_lod.config import Config
 from ogd_to_lod.github import GitHubService, PRCreationError
@@ -477,7 +478,7 @@ def generate_node(state: GraphState, ai_service: AIService) -> GraphState:
 
 
 def suggest_mapping_name(state: GraphState) -> str:
-    """Derive a mapping name from DCAT title (preferred) or CSV filename (fallback).
+    """Derive a mapping name from --output-folder, DCAT title, or CSV filename.
 
     Args:
         state: Current graph state.
@@ -485,8 +486,11 @@ def suggest_mapping_name(state: GraphState) -> str:
     Returns:
         A slug-style mapping name suitable for branch and file names.
     """
-    # Prefer dataset context title
-    if state.dataset_context and state.dataset_context.get("title"):
+    # Prefer the CLI --output-folder (deliberate user-supplied identifier)
+    if state.output_folder:
+        raw = state.output_folder
+    # Otherwise fall back to dataset context title
+    elif state.dataset_context and state.dataset_context.get("title"):
         raw = state.dataset_context["title"]
     elif state.csv_path:
         csv_filename = state.csv_path.split("/")[-1].split("\\")[-1]
@@ -718,7 +722,8 @@ def _write_local_output(
         The path of the timestamped folder that was created.
     """
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    target_dir = Path.cwd() / "results" / f"{timestamp}-{output_folder}"
+    folder_slug = slugify(output_folder)
+    target_dir = Path.cwd() / "results" / f"{timestamp}-{folder_slug}"
     target_dir.mkdir(parents=True, exist_ok=True)
 
     (target_dir / "mapping.yarrrml.yaml").write_text(rml_content, encoding="utf-8")

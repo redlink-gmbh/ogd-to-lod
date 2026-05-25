@@ -1,0 +1,99 @@
+zeit
+Zeitstempel in UTC
+Name (Kennung)	datum_zeit
+Art	Datumzeit
+Muster
+2018-06-01T01:00:00+00:00
+
+timestamp_text
+Zeitstempel als Text in Mitteleuropäischer Zeit ("Winterzeit")
+Name (Kennung)	timestamp_text
+Art	Text
+Muster
+01.06.2018 02:00
+
+O3 [ug/m3]
+Ozon
+Name (Kennung)	o3_ug_m3
+Art	Dezimalzahl
+Einheit	μg/m3
+Muster
+54.4
+
+NO2 [ug/m3]
+Stickstoffdioxid
+Name (Kennung)	no2_ug_m3
+Art	Dezimalzahl
+Einheit	μg/m3
+Muster
+6.9
+
+PM10 [ug/m3]
+Feinstaub mit Partikelgrösse < 10 tausendstel Millimeter
+Name (Kennung)	pm10_ug_m3
+Art	Dezimalzahl
+Einheit	μg/m3
+Muster
+8.8
+
+PM2.5 [ug/m3]
+Feinstaub mit Partikelgrösse < 2.5 tausendstel Millimeter
+Name (Kennung)	pm2_5_ug_m3
+Art	Dezimalzahl
+Einheit	μg/m3
+Muster
+5.4
+
+CPC [1/cm3]
+Partikelanzahlkonzentration
+Name (Kennung)	cpc_1_cm3
+Art	Dezimalzahl
+Muster
+6327.7
+
+EC [ug/m3]
+Russ (EC in PM2.5)
+Name (Kennung)	ec_ug_m3
+Art	Dezimalzahl
+Einheit	μg/m3
+Muster
+0.1
+
+PREC [mm]
+Niederschlag
+Name (Kennung)	prec_mm
+Art	Dezimalzahl
+Einheit	mm
+Muster
+0
+
+RAD [W/m2]
+Globalstrahlung
+Name (Kennung)	rad_w_m2
+Art	Dezimalzahl
+Muster
+0
+
+SO2 [ug/m3]
+Schwefeldioxid
+Name (Kennung)	so2_ug_m3
+Art	Dezimalzahl
+Einheit	μg/m3
+Muster
+0.5
+
+NOX [ug/m3 eq. NO2]
+Keine Beschreibung für dieses Feld verfügbar.
+Name (Kennung)	nox_ug_m3_eq_no2
+Art	Dezimalzahl
+Einheit	μg/m3
+Muster
+7.3
+
+TEMP [C]
+Keine Beschreibung für dieses Feld verfügbar.
+Name (Kennung)	temp_c
+Art	Dezimalzahl
+Einheit	°C
+Muster
+13.8

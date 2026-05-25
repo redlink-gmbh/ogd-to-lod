@@ -120,9 +120,14 @@ the host daemon.
 # Build the image once:
 docker compose build
 
-# One-shot run (interactive prompts work under `compose run`):
+# One-shot run against the bundled example (interactive prompts work
+# under `compose run`):
 docker compose run --rm ogd-to-lod \
-    data/luft-basel.csv --output-folder luft-basel --local
+    example/weather-binningen-hourly/data.small.csv \
+    --output-folder weather-binningen-hourly \
+    --context example/weather-binningen-hourly/dcat.ttl \
+              example/weather-binningen-hourly/fields.txt \
+    --local
 
 # Optional: bring up Fuseki alongside (same config as tests/e2e):
 docker compose --profile fuseki up -d
@@ -155,18 +160,32 @@ ogd-to-lod <csv_path> --output-folder <folder> [--context FILE ...]
 
 ### Examples
 
+The bundled example under `example/weather-binningen-hourly/` contains a
+small CSV (`data.csv`), the full CSV (`data.csv`), a DCAT
+description (`dcat.ttl`), and a plain-text column glossary
+(`fields.txt`):
+
 ```bash
 # CSV only (no context)
-ogd-to-lod data/population.csv --output-folder bev-bestand-2024
+ogd-to-lod example/weather-binningen-hourly/data.csv \
+    --output-folder weather-binningen-hourly
 
 # With a DCAT metadata file
-ogd-to-lod data/population.csv --output-folder bev-bestand-2024 --context metadata/population.dcat.jsonld
+ogd-to-lod example/weather-binningen-hourly/data.csv \
+    --output-folder weather-binningen-hourly \
+    --context example/weather-binningen-hourly/dcat.ttl
 
 # With multiple context files (DCAT + column documentation)
-ogd-to-lod data/population.csv --output-folder bev-bestand-2024 --context metadata/population.dcat.ttl docs/columns.md
+ogd-to-lod example/weather-binningen-hourly/data.csv \
+    --output-folder weather-binningen-hourly \
+    --context example/weather-binningen-hourly/dcat.ttl \
+              example/weather-binningen-hourly/fields.txt
 
 # Override base URI
-ogd-to-lod data/population.csv --output-folder bev-bestand-2024 --context metadata.ttl --base-uri https://example.org/data/
+ogd-to-lod example/weather-binningen-hourly/data.csv \
+    --output-folder weather-binningen-hourly \
+    --context example/weather-binningen-hourly/dcat.ttl \
+    --base-uri https://example.org/data/
 ```
 
 The resulting PR will contain two files in `{mappings_folder}/{output-folder}/`:
