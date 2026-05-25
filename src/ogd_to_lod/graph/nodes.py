@@ -442,6 +442,7 @@ def generate_node(state: GraphState, ai_service: AIService) -> GraphState:
             base_uri=state.base_uri,
             dataset_context=state.dataset_context,
             reuse_context=state.reuse_context,
+            output_folder=state.output_folder,
         )
 
         state.generated_rml = rml_content
@@ -453,7 +454,11 @@ def generate_node(state: GraphState, ai_service: AIService) -> GraphState:
         logger.info(f"Successfully generated YARRRML ({len(rml_content)} characters)")
 
         # Generate companion static metadata Turtle (cube:Cube + ObservationSet)
-        state.generated_metadata = generate_metadata(state.base_uri, state.dataset_context)
+        state.generated_metadata = generate_metadata(
+            state.base_uri,
+            state.dataset_context,
+            output_folder=state.output_folder,
+        )
         logger.info(
             "Generated metadata.ttl (%d characters)",
             len(state.generated_metadata),

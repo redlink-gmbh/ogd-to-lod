@@ -83,3 +83,32 @@ def test_only_observation_set_link_when_context_empty():
     """The cube:observationSet link is always emitted, even without metadata."""
     ttl = generate_metadata(BASE, {})
     assert "cube:observationSet" in ttl
+
+
+def test_output_folder_scopes_cube_iri():
+    """When output_folder is provided, the cube IRI is appended with the slug."""
+    ttl = generate_metadata(BASE, None, output_folder="luft-basel")
+
+    assert "<https://example.org/datasets/foo/luft-basel> a cube:Cube" in ttl
+    assert (
+        "cube:observationSet "
+        "<https://example.org/datasets/foo/luft-basel/observation-set>"
+    ) in ttl
+    assert (
+        "<https://example.org/datasets/foo/luft-basel/observation-set> "
+        "a cube:ObservationSet ."
+    ) in ttl
+
+
+def test_output_folder_is_slugified():
+    """Whitespace and case in the output folder are normalised into the IRI."""
+    ttl = generate_metadata(BASE, None, output_folder="Luft Basel 2024")
+    assert "<https://example.org/datasets/foo/luft-basel-2024> a cube:Cube" in ttl
+
+
+def test_output_folder_works_without_trailing_slash_base():
+    ttl = MetadataGenerator().generate(
+        "https://example.org/foo", None, output_folder="bar"
+    )
+    assert "<https://example.org/foo/bar> a cube:Cube" in ttl
+    assert "<https://example.org/foo/bar/observation-set> a cube:ObservationSet" in ttl

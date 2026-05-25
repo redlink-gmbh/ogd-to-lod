@@ -4,6 +4,10 @@
 *.pem
 *.key
 
+# Local CLI outputs and sibling-container scratch space
+results/
+.work/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -78,3 +82,5 @@ data/
 # Test fixtures (override data/ and *.rml.ttl rules above)
 !tests/data/
 !tests/data/**
+/tests/e2e/fuseki-data/**
+/results/**

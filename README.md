@@ -102,6 +102,34 @@ rml:
   yarrrml_parser_docker_image: "rmlio/yarrrml-parser:latest"
 ```
 
+## Running inside Docker
+
+A `Dockerfile` and root `docker-compose.yml` are provided so the CLI can
+run without a local Python install. The container talks to the **host's**
+Docker daemon via a bind-mounted socket and spawns `yarrrml-parser` /
+`rmlmapper-java` as **sibling** containers — there is no
+docker-in-docker, and no `--privileged` flag is needed.
+
+To make sibling-container bind mounts work, the project directory is
+mounted at the same absolute path inside the container as on the host,
+and Python's `TMPDIR` is pointed at `${PWD}/.work`. That way a path the
+app emits (e.g. `/Users/you/proj/.work/tmpXYZ`) means the same thing to
+the host daemon.
+
+```bash
+# Build the image once:
+docker compose build
+
+# One-shot run (interactive prompts work under `compose run`):
+docker compose run --rm ogd-to-lod \
+    data/luft-basel.csv --output-folder luft-basel --local
+
+# Optional: bring up Fuseki alongside (same config as tests/e2e):
+docker compose --profile fuseki up -d
+```
+
+Credentials come from `.env` (same variables as the native install).
+
 ## Usage
 
 ```bash

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ogd_to_lod._slug import slugify
 from ogd_to_lod.logging import get_logger
 
 logger = get_logger(__name__)
@@ -38,6 +39,7 @@ class MetadataGenerator:
         self,
         base_uri: str,
         dataset_context: dict[str, Any] | None = None,
+        output_folder: str | None = None,
     ) -> str:
         """Generate the metadata Turtle string.
 
@@ -45,12 +47,24 @@ class MetadataGenerator:
             base_uri: Base URI for the dataset (used to derive cube and
                 observation-set IRIs). Trailing slash is preserved.
             dataset_context: Optional serialized DatasetContext dict.
+            output_folder: Optional dataset slug, typically the CLI
+                ``--output-folder`` value. When provided, it is appended to
+                ``base_uri`` so each dataset gets a unique cube IRI:
+                ``<base_uri><slug>``. The ObservationSet then lives under
+                ``<base_uri><slug>/observation-set``. When omitted, the cube
+                IRI is the bare ``base_uri`` (legacy behaviour).
 
         Returns:
             Turtle document as a string.
         """
-        cube_iri = base_uri
-        obs_set_iri = base_uri + "observation-set" if base_uri.endswith("/") else base_uri + "/observation-set"
+        base_with_slash = base_uri if base_uri.endswith("/") else base_uri + "/"
+        slug = slugify(output_folder) if output_folder else ""
+        if slug:
+            cube_iri = base_with_slash + slug
+            obs_set_iri = cube_iri + "/observation-set"
+        else:
+            cube_iri = base_uri
+            obs_set_iri = base_with_slash + "observation-set"
 
         ctx = dataset_context or {}
 
@@ -154,6 +168,7 @@ def _license_triple(value: str) -> str:
 def generate_metadata(
     base_uri: str,
     dataset_context: dict[str, Any] | None = None,
+    output_folder: str | None = None,
 ) -> str:
     """Convenience wrapper around :class:`MetadataGenerator`."""
-    return MetadataGenerator().generate(base_uri, dataset_context)
+    return MetadataGenerator().generate(base_uri, dataset_context, output_folder)

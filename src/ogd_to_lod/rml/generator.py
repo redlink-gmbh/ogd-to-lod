@@ -3,6 +3,7 @@
 import re
 from typing import Any
 
+from ogd_to_lod._slug import slugify
 from ogd_to_lod.ai import AIService
 from ogd_to_lod.lookup import ReuseContext
 from ogd_to_lod.logging import get_logger
@@ -82,6 +83,7 @@ class RMLGenerator:
         base_uri: str,
         dataset_context: dict[str, Any] | None = None,
         reuse_context: ReuseContext | None = None,
+        output_folder: str | None = None,
     ) -> str:
         """Generate YARRRML mapping from approved proposal.
 
@@ -92,6 +94,11 @@ class RMLGenerator:
             base_uri: Base URI for generated resources.
             dataset_context: Optional normalized dataset context with column descriptions.
             reuse_context: Optional SPARQL-based reuse context with existing URIs.
+            output_folder: Optional dataset slug (typically the CLI
+                ``--output-folder``). When provided, all generated resources
+                (``ex:``, ``ex-obs:``, ``ex-property:``, ``ex-code:``, and the
+                ObservationSet IRI) live under ``<base_uri><slug>/`` so
+                multiple datasets sharing the same base URI stay isolated.
 
         Returns:
             Generated YARRRML mapping.
@@ -116,10 +123,18 @@ class RMLGenerator:
                 len(reuse_context.defined_term_sets),
             )
 
+        # When output_folder is provided, scope every dataset-specific
+        # resource (cube, observation-set, ex:*, ex-obs:*, ex-property:*,
+        # ex-code:*) under <base_uri><slug>/ so multiple mappings sharing
+        # the same base URI do not collide.
+        base_with_slash = base_uri if base_uri.endswith("/") else base_uri + "/"
+        slug = slugify(output_folder) if output_folder else ""
+        prompt_base_uri = base_with_slash + slug + "/" if slug else base_uri
+
         # Build the prompt — use a placeholder for the CSV path so that the
         # generated YARRRML is portable and can be deployed with different CSV sources.
         prompt = RML_GENERATION_PROMPT.format(
-            base_uri=base_uri,
+            base_uri=prompt_base_uri,
             mapping_proposal=proposal_text,
             csv_schema=schema_text,
             column_descriptions=column_desc_text,
@@ -305,6 +320,7 @@ def generate_rml(
     csv_path: str,
     base_uri: str,
     reuse_context: ReuseContext | None = None,
+    output_folder: str | None = None,
 ) -> str:
     """Convenience function to generate YARRRML mapping.
 
@@ -315,6 +331,7 @@ def generate_rml(
         csv_path: Path to the CSV file.
         base_uri: Base URI for generated resources.
         reuse_context: Optional SPARQL-based reuse context with existing URIs.
+        output_folder: Optional dataset slug (CLI ``--output-folder``).
 
     Returns:
         Generated YARRRML mapping.
@@ -323,4 +340,11 @@ def generate_rml(
         RMLGenerationError: If generation fails.
     """
     generator = RMLGenerator(ai_service)
-    return generator.generate(mapping_proposal, csv_schema, csv_path, base_uri, reuse_context)
+    return generator.generate(
+        mapping_proposal,
+        csv_schema,
+        csv_path,
+        base_uri,
+        reuse_context=reuse_context,
+        output_folder=output_folder,
+    )

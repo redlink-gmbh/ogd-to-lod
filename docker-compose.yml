@@ -1,0 +1,72 @@
+# Run the ogd-to-lod CLI inside a container with access to the host's
+# Docker daemon (so it can spawn yarrrml-parser and RMLMapper as
+# *sibling* containers — no docker-in-docker).
+#
+# Typical use:
+#   # one-shot CLI run (interactive prompts work):
+#   docker compose run --rm ogd-to-lod \
+#       data/luft-basel.csv --output-folder luft-basel --local
+#
+#   # interactive shell inside the image:
+#   docker compose run --rm --entrypoint bash ogd-to-lod
+#
+#   # bring up Fuseki alongside (matches tests/e2e/docker-compose.yml):
+#   docker compose --profile fuseki up -d
+#
+# The workspace is bind-mounted at the SAME absolute path it has on the
+# host (${PWD}). This makes paths transparent to the sibling containers
+# that the host Docker daemon launches on behalf of the app — without it,
+# a `docker run -v /tmp/foo:/data` from inside the container would
+# reference a path that does not exist on the host.
+
+services:
+  ogd-to-lod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ogd-to-lod:dev
+    # Mount the host Docker socket so the CLI inside can run sibling
+    # containers via the host daemon. The workspace is mounted at the
+    # identical absolute path on both sides — see TMPDIR below.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${PWD}:${PWD}
+    working_dir: ${PWD}
+    environment:
+      # Force tempfile.* to use a path that exists identically on host
+      # and container, so sibling docker runs can bind-mount it.
+      - TMPDIR=${PWD}/.work
+      - APP_GITHUB_TOKEN=${APP_GITHUB_TOKEN:-}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT:-}
+      - AZURE_OPENAI_KEY=${AZURE_OPENAI_KEY:-}
+      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT:-}
+      - GITHUB_REPO=${GITHUB_REPO:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    env_file:
+      - .env
+    # Keep stdin/tty wired up so the CLI's yes/no prompts work under
+    # `docker compose run`.
+    stdin_open: true
+    tty: true
+
+  # Optional local triplestore. Activate with `--profile fuseki`.
+  # Mirrors tests/e2e/docker-compose.yml so a single root compose file
+  # can bring everything up.
+  fuseki:
+    image: stain/jena-fuseki
+    platform: linux/amd64
+    container_name: ogd-fuseki
+    profiles:
+      - fuseki
+    ports:
+      - "3030:3030"
+    environment:
+      - ADMIN_PASSWORD=admin
+      - JVM_ARGS=-Xmx2g
+      - FUSEKI_DATASET_1=test
+    volumes:
+      - fuseki-data:/fuseki
+    restart: unless-stopped
+
+volumes:
+  fuseki-data:

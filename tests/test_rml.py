@@ -528,6 +528,40 @@ class TestFixBareIriObjects:
         assert "<https://a.example/x>" not in out
         assert "<https://b.example/y>" not in out
 
+    def test_output_folder_scopes_prompt_base_uri(self):
+        """When output_folder is set, the prompt's {base_uri} carries the slug."""
+        mock_ai = MagicMock()
+        mock_ai.send_message.return_value = "```yaml\nmappings: {}\n```\n"
+        gen = RMLGenerator(mock_ai)
+        gen.generate(
+            mapping_proposal={"dimensions": [], "measures": []},
+            csv_schema={"source": "x", "total_rows": 1, "columns": []},
+            csv_path="/tmp/x.csv",
+            base_uri="https://example.org/datasets/foo/",
+            output_folder="My Dataset",
+        )
+        sent_prompt = mock_ai.send_message.call_args[0][0]
+        # The prefix block in the prompt should now point at
+        # the slugified per-dataset namespace.
+        assert 'ex: "https://example.org/datasets/foo/my-dataset/"' in sent_prompt
+        assert (
+            'ex-obs: "https://example.org/datasets/foo/my-dataset/observation/"'
+            in sent_prompt
+        )
+
+    def test_no_output_folder_keeps_base_uri_unchanged(self):
+        mock_ai = MagicMock()
+        mock_ai.send_message.return_value = "```yaml\nmappings: {}\n```\n"
+        gen = RMLGenerator(mock_ai)
+        gen.generate(
+            mapping_proposal={"dimensions": [], "measures": []},
+            csv_schema={"source": "x", "total_rows": 1, "columns": []},
+            csv_path="/tmp/x.csv",
+            base_uri="https://example.org/datasets/foo/",
+        )
+        sent_prompt = mock_ai.send_message.call_args[0][0]
+        assert 'ex: "https://example.org/datasets/foo/"' in sent_prompt
+
     def test_generator_applies_sanitiser_to_ai_output(self):
         """End-to-end check that RMLGenerator.generate runs the sanitiser."""
         from ogd_to_lod.ai import ParsedResponse
