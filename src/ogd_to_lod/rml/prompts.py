@@ -105,17 +105,18 @@ mapping for the object position so the IRIs match exactly:
   observationSetLink:
     sources:
       - csvSource
-    s: <{base_uri}observation-set>
+    s: ex:observation-set
     po:
       - [cube:observation, ex-obs:$(YearCol)_$(RegionCodeCol)~iri]
 ```
 
 Notes:
-- The subject is a full IRI (angle brackets), not a prefixed name, because \
-`ex:` resolves to a prefix and the observation-set IRI lives directly under \
-the dataset base. **Bare angle-bracket IRIs (`<…>`) are only valid in \
-subject position (`s:`)** — see the "Constant IRIs in object position" \
-rule below.
+- The subject is a **CURIE**: `ex:` is declared in the `prefixes:` block \
+above as `{base_uri}`, so `ex:observation-set` expands to \
+`<{base_uri}observation-set>`. CURIE is the **only** working form for a \
+constant IRI subject — angle-bracket forms (`s: <iri>` or \
+`s: "<iri>"`) are not valid YARRRML and produce URL-encoded broken IRIs \
+in the output (see "Constant IRI subjects" rule below).
 - The `~iri` suffix on the object is mandatory so RMLMapper emits the \
 observation as a resource, not a literal.
 
@@ -214,6 +215,27 @@ string + `~iri`, no angle brackets):
 - [cube:observation, "https://ld.domain.ch/statistics/observation/2024_CH~iri"]
 ```
 
+**CRITICAL — Constant IRI subjects MUST be CURIEs**: Angle-bracket IRIs \
+(`<https://…>`) on `s:` lines are **not valid YARRRML** — neither the \
+bare nor the quoted form. yarrrml-parser treats the whole `<…>` string \
+as a plain template and RMLMapper URL-encodes the `<` and `>` into the \
+IRI path, producing broken IRIs like `<%3Chttps://…%3E>`. Use a CURIE \
+that resolves via a declared prefix instead.
+
+```yaml
+# WRONG — bare angle-bracket IRI on an s: line:
+  observationSetLink:
+    s: <https://ld.domain.ch/statistics/observation-set>
+
+# WRONG — quoted angle-bracket IRI on an s: line:
+  observationSetLink:
+    s: "<https://ld.domain.ch/statistics/observation-set>"
+
+# CORRECT — CURIE using a declared prefix (ex: is in prefixes:):
+  observationSetLink:
+    s: ex:observation-set
+```
+
 ### Key Dimensions vs Measures
 
 **Key dimensions** (region, year, category, etc.):
@@ -291,15 +313,32 @@ If the error mentions a flow sequence near a `~iri` suffix, the cause is `~iri` 
 ```
 
 If the resulting RDF contains URL-encoded angle brackets in an IRI
-(e.g. `<%3Chttps://…%3E>`), the cause is a bare angle-bracket IRI used in
-**object** position of a `po:` shorthand. Bare `<…>` is only valid as the
-subject (`s:`). In object position, use a prefixed CURIE + `~iri`, or a
-plain IRI string + `~iri`:
+(e.g. `<%3Chttps://…%3E>`), the cause is an angle-bracket IRI used as a
+**constant IRI** in YARRRML. yarrrml-parser does not recognise the
+angle-bracket form in either `s:` or `po:` shorthand positions and
+treats the whole `<…>` string as a template, so RMLMapper URL-encodes
+the brackets. Use a CURIE (declared in `prefixes:`) instead.
+
+In **object** position, append `~iri` to the CURIE:
 ```yaml
 # Wrong — bare angle-bracket IRI in object position:
 - [cube:observation, <https://ld.domain.ch/statistics/observation/2024_CH>]
 # Correct — prefixed CURIE + ~iri:
 - [cube:observation, "ex-obs:2024_CH~iri"]
+```
+
+In **subject** position, use a bare CURIE — no angle brackets, no quotes,
+no `~iri` suffix:
+```yaml
+# Wrong — bare angle-bracket IRI on s: line:
+  observationSetLink:
+    s: <https://ld.domain.ch/statistics/observation-set>
+# Wrong — quoted angle-bracket IRI on s: line:
+  observationSetLink:
+    s: "<https://ld.domain.ch/statistics/observation-set>"
+# Correct — CURIE using a declared prefix:
+  observationSetLink:
+    s: ex:observation-set
 ```
 """
 

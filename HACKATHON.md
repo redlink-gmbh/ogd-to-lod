@@ -146,8 +146,7 @@ SELECT ?p ?o WHERE { ?obs a cube:Observation ; ?p ?o } LIMIT 50
 ## Step 6 — Browse the RDF in a Linked-Data viewer (optional)
 
 Fuseki's SPARQL UI is fine for queries; for click-through *browsing* of
-each cube / observation / property as an HTML page, bring up **Trifid**
-(by Zazuko, built for cube.link):
+each cube / observation / property as an HTML page, bring up **Trifid**:
 
 ```bash
 docker compose --profile trifid up -d trifid
@@ -207,9 +206,8 @@ chrome.
   paths and `--output-folder`.
 
 ## Tearing down
-
+Stops Fuseki + Trifid (if running) and drops Fuseki's data volume
 ```bash
-# stops Fuseki + Trifid (if running) and drops Fuseki's data volume
 docker compose --profile fuseki --profile trifid down -v
 ```
 

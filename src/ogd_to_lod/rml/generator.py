@@ -23,6 +23,21 @@ _BARE_IRI_OBJECT_RE = re.compile(
     r"(\[\s*[^,\[\]]+,\s*)<(https?://[^>\s]+)>(\s*[,\]])"
 )
 
+# Matches an angle-bracket IRI used as a subject, in either form:
+#     s: <https://example.org/foo>      (bare)
+#     s: "<https://example.org/foo>"    (quoted)
+# Neither form is valid YARRRML for a constant IRI subject — yarrrml-parser
+# treats the whole `<…>` string as a template and RMLMapper URL-encodes the
+# `<` and `>` into the IRI's path, producing `<%3Chttps://…%3E>`. The
+# universally-working alternative is the YARRRML long form:
+#     s:
+#       value: https://example.org/foo
+#       type: iri
+_IRI_SUBJECT_RE = re.compile(
+    r'^(?P<indent>[ \t]+)s:[ \t]*"?<(?P<iri>https?://[^>\s"]+)>"?[ \t]*$',
+    re.MULTILINE,
+)
+
 
 def _fix_bare_iri_objects(yarrrml: str) -> str:
     """Rewrite bare <https://…> IRIs in po: shorthand objects.
@@ -52,6 +67,44 @@ def _fix_bare_iri_objects(yarrrml: str) -> str:
             m.group(2),
         )
     return _BARE_IRI_OBJECT_RE.sub(r'\1"\2~iri"\3', yarrrml)
+
+
+def _fix_iri_subject(yarrrml: str) -> str:
+    """Rewrite `s: <iri>` / `s: "<iri>"` to YARRRML's long form.
+
+    Angle-bracket IRIs are not valid in YARRRML ``s:`` lines — both the
+    quoted and bare forms get treated as plain templates and end up
+    URL-encoded by RMLMapper. The long form is the documented way to
+    assert a constant IRI subject::
+
+        s:
+          value: https://example.org/foo
+          type: iri
+
+    The rewrite preserves the line's indentation and inserts two extra
+    spaces for the nested keys. Logs a warning per rewrite so the
+    underlying prompt drift stays visible.
+    """
+    matches = list(_IRI_SUBJECT_RE.finditer(yarrrml))
+    if not matches:
+        return yarrrml
+
+    def _replace(m: re.Match[str]) -> str:
+        indent = m.group("indent")
+        iri = m.group("iri")
+        logger.warning(
+            "Rewriting angle-bracket IRI subject in YARRRML to long form: "
+            "s: <%s> → s: { value: %s, type: iri }",
+            iri,
+            iri,
+        )
+        return (
+            f"{indent}s:\n"
+            f"{indent}  value: {iri}\n"
+            f"{indent}  type: iri"
+        )
+
+    return _IRI_SUBJECT_RE.sub(_replace, yarrrml)
 
 
 class RMLGenerationError(Exception):
@@ -157,7 +210,9 @@ class RMLGenerator:
                     "Response did not contain a yaml code block."
                 )
 
-            rml_content = _fix_bare_iri_objects(yaml_blocks[0])
+            rml_content = _fix_iri_subject(
+                _fix_bare_iri_objects(yaml_blocks[0])
+            )
             logger.info(f"Generated YARRRML with {len(rml_content)} characters")
 
             return rml_content
@@ -202,7 +257,9 @@ class RMLGenerator:
                     "Response did not contain a yaml code block."
                 )
 
-            rml_content = _fix_bare_iri_objects(yaml_blocks[0])
+            rml_content = _fix_iri_subject(
+                _fix_bare_iri_objects(yaml_blocks[0])
+            )
             logger.info(f"Regenerated YARRRML with {len(rml_content)} characters")
 
             return rml_content

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from ogd_to_lod.config import Config, GitHubConfig, AzureOpenAIConfig, RMLConfig
 from ogd_to_lod.rml import RMLGenerator, RMLGenerationError, generate_rml
-from ogd_to_lod.rml.generator import _fix_bare_iri_objects
+from ogd_to_lod.rml.generator import _fix_bare_iri_objects, _fix_iri_subject
 from ogd_to_lod.rml.prompts import RML_CORRECTION_PROMPT, RML_GENERATION_PROMPT
 from ogd_to_lod.graph.state import (
     DimensionProposal,
@@ -592,3 +592,98 @@ class TestFixBareIriObjects:
             )
         assert "<https://example.org/observation-set>" not in out
         assert '"https://example.org/observation-set~iri"' in out
+
+
+class TestFixIriSubject:
+    """Tests for the IRI-subject sanitiser in generator.py.
+
+    Both bare (`s: <iri>`) and quoted (`s: "<iri>"`) forms are invalid
+    YARRRML for constant-IRI subjects; the sanitiser rewrites both to
+    the long form `s: { value: <iri>, type: iri }`.
+    """
+
+    def test_quoted_iri_subject_rewritten_to_long_form(self):
+        src = '    s: "<https://example.org/observation-set>"\n'
+        out = _fix_iri_subject(src)
+        assert out == (
+            "    s:\n"
+            "      value: https://example.org/observation-set\n"
+            "      type: iri\n"
+        )
+
+    def test_bare_iri_subject_rewritten_to_long_form(self):
+        src = "    s: <https://example.org/observation-set>\n"
+        out = _fix_iri_subject(src)
+        assert out == (
+            "    s:\n"
+            "      value: https://example.org/observation-set\n"
+            "      type: iri\n"
+        )
+
+    def test_curie_subject_untouched(self):
+        src = "    s: ex-obs:$(year)_$(region)\n"
+        assert _fix_iri_subject(src) == src
+
+    def test_constant_curie_subject_untouched(self):
+        src = "    s: ex:observation-set\n"
+        assert _fix_iri_subject(src) == src
+
+    def test_unrelated_quoted_strings_untouched(self):
+        src = (
+            '    access: "{CSV_SOURCE}"\n'
+            '    ex: "https://example.org/"\n'
+            "    s: ex-obs:$(year)\n"
+        )
+        assert _fix_iri_subject(src) == src
+
+    def test_handles_multiple_subjects(self):
+        src = (
+            '    s: "<https://a.example/x>"\n'
+            "    po: [...]\n"
+            "    s: <https://b.example/y>\n"
+        )
+        out = _fix_iri_subject(src)
+        assert "value: https://a.example/x" in out
+        assert "value: https://b.example/y" in out
+        assert "type: iri" in out
+        assert "<https://" not in out
+
+    def test_preserves_indentation(self):
+        # 6-space indentation (deeper nesting)
+        src = '      s: "<https://example.org/foo>"\n'
+        out = _fix_iri_subject(src)
+        assert out == (
+            "      s:\n"
+            "        value: https://example.org/foo\n"
+            "        type: iri\n"
+        )
+
+    def test_generator_applies_subject_sanitiser_end_to_end(self):
+        """RMLGenerator.generate runs the new sanitiser on the AI output."""
+        from ogd_to_lod.ai import ParsedResponse
+
+        mock_ai = MagicMock()
+        bad_yarrrml = (
+            'prefixes:\n  ex: "https://example.org/"\n'
+            "mappings:\n  observationSetLink:\n    sources: [csvSource]\n"
+            "    s: <https://example.org/observation-set>\n"
+            "    po:\n"
+            '      - [cube:observation, "ex-obs:row~iri"]\n'
+        )
+        mock_ai.send_message.return_value = "```yaml\n" + bad_yarrrml + "```\n"
+        parsed = MagicMock(spec=ParsedResponse)
+        parsed.get_yaml_blocks.return_value = [bad_yarrrml]
+        with patch(
+            "ogd_to_lod.rml.generator.AIService.parse_response",
+            return_value=parsed,
+        ):
+            gen = RMLGenerator(mock_ai)
+            out = gen.generate(
+                mapping_proposal={"dimensions": [], "measures": []},
+                csv_schema={"source": "x", "total_rows": 1, "columns": []},
+                csv_path="/tmp/x.csv",
+                base_uri="https://example.org/",
+            )
+        assert "s: <https://example.org/observation-set>" not in out
+        assert "value: https://example.org/observation-set" in out
+        assert "type: iri" in out
