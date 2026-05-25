@@ -1,17 +1,20 @@
 """Static RDF metadata generation for cube:Cube + cube:ObservationSet.
 
 Produces a Turtle file (typically ``metadata.ttl``) committed alongside the
-YARRRML mapping. The file describes the dataset as a cube.link Cube and
-declares its ObservationSet, enabling Forward-discovery of observations
-via ``cube:observationSet`` and ``cube:observation``.
+YARRRML mapping. The file describes the dataset as a cube.link Cube,
+declares its ObservationSet, and (when a mapping proposal is supplied)
+emits per-dimension / per-measure ``schema:name`` and
+``schema:description`` triples on the property IRIs so downstream
+consumers can read column documentation directly from the RDF.
 
-Per-property constraints (``cube:DimensionConstraint`` /
-``cube:MeasureConstraint``) and static dimension values are intentionally
-out of scope for this first version — see GitHub issue #41.
+Richer cube.link constructs (``cube:DimensionConstraint`` /
+``cube:MeasureConstraint``, code lists, SHACL paths) remain out of scope —
+see GitHub issue #41.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ogd_to_lod._slug import slugify
@@ -40,6 +43,7 @@ class MetadataGenerator:
         base_uri: str,
         dataset_context: dict[str, Any] | None = None,
         output_folder: str | None = None,
+        mapping_proposal: dict[str, Any] | None = None,
     ) -> str:
         """Generate the metadata Turtle string.
 
@@ -53,6 +57,10 @@ class MetadataGenerator:
                 ``<base_uri><slug>``. The ObservationSet then lives under
                 ``<base_uri><slug>/observation-set``. When omitted, the cube
                 IRI is the bare ``base_uri`` (legacy behaviour).
+            mapping_proposal: Optional approved mapping proposal dict
+                (``MappingProposal.to_dict()``). When provided, a
+                ``schema:name`` + ``schema:description`` block is emitted
+                for each dimension and measure property IRI.
 
         Returns:
             Turtle document as a string.
@@ -62,9 +70,11 @@ class MetadataGenerator:
         if slug:
             cube_iri = base_with_slash + slug
             obs_set_iri = cube_iri + "/observation-set"
+            property_prefix = cube_iri + "/property/"
         else:
             cube_iri = base_uri
             obs_set_iri = base_with_slash + "observation-set"
+            property_prefix = base_with_slash + "property/"
 
         ctx = dataset_context or {}
 
@@ -109,13 +119,47 @@ class MetadataGenerator:
 
         obs_set_block = f"<{obs_set_iri}> a cube:ObservationSet .\n"
 
+        property_blocks: list[str] = []
+        if mapping_proposal:
+            column_contexts = (
+                (dataset_context or {}).get("column_contexts") or {}
+            )
+            descriptors: list[dict[str, Any]] = []
+            for dim in mapping_proposal.get("dimensions", []) or []:
+                d = _property_descriptor(
+                    property_prefix,
+                    column=dim.get("column", ""),
+                    column_contexts=column_contexts,
+                    dimension_type=dim.get("type"),
+                    kind="dimension",
+                )
+                if d:
+                    descriptors.append(d)
+            for measure in mapping_proposal.get("measures", []) or []:
+                d = _property_descriptor(
+                    property_prefix,
+                    column=measure.get("column", ""),
+                    column_contexts=column_contexts,
+                    dimension_type=None,
+                    kind="measure",
+                )
+                if d:
+                    descriptors.append(d)
+            merged = _merge_descriptors(descriptors)
+            property_blocks = [_render_property_block(d) for d in merged]
+
         logger.info(
-            "Generated metadata.ttl with cube IRI %s and observation-set %s",
+            "Generated metadata.ttl with cube IRI %s, observation-set %s, "
+            "%d property block(s)",
             cube_iri,
             obs_set_iri,
+            len(property_blocks),
         )
 
-        return _PREFIXES + "\n" + cube_block + "\n" + obs_set_block
+        out = _PREFIXES + "\n" + cube_block + "\n" + obs_set_block
+        if property_blocks:
+            out += "\n" + "\n".join(property_blocks)
+        return out
 
 
 def _indent(line: str) -> str:
@@ -165,10 +209,122 @@ def _license_triple(value: str) -> str:
     return f"dcterms:license {_turtle_string(value)}"
 
 
+_PROPERTY_LOCAL_NAME_CLEANUP = re.compile(r"[\s./\[\]\(\)]+")
+_PROPERTY_LOCAL_NAME_KEEP = re.compile(r"[^A-Za-z0-9_\-]")
+_PROPERTY_LOCAL_NAME_COLLAPSE = re.compile(r"_+")
+
+
+def _property_local_name(column: str, dimension_type: str | None) -> str:
+    """Mirror the YARRRML prompt's property naming convention.
+
+    Time dimensions resolve to ``ZEIT``, spatial dimensions to ``RAUM``;
+    everything else uses a sanitised version of the column header where
+    whitespace, brackets, dots, and slashes become ``_``, all other
+    non-IRI-safe characters are dropped, and runs of ``_`` are collapsed.
+    """
+    if dimension_type == "temporal":
+        return "ZEIT"
+    if dimension_type == "spatial":
+        return "RAUM"
+    s = _PROPERTY_LOCAL_NAME_CLEANUP.sub("_", column or "")
+    s = _PROPERTY_LOCAL_NAME_KEEP.sub("", s)
+    s = _PROPERTY_LOCAL_NAME_COLLAPSE.sub("_", s).strip("_")
+    return s or "property"
+
+
+_PROPERTY_TYPES = {
+    "dimension": "cube:KeyDimension",
+    "measure": "cube:MeasureDimension",
+}
+
+
+def _property_descriptor(
+    property_prefix: str,
+    column: str,
+    column_contexts: dict[str, Any],
+    dimension_type: str | None,
+    kind: str,
+) -> dict[str, Any] | None:
+    """Compute the property IRI + metadata fields for one proposal entry.
+
+    Returns ``None`` for empty column names. Otherwise a dict with keys
+    ``iri``, ``kind``, ``rdf_type``, ``column``, ``description``, ``comment``.
+    Rendering and de-duplication happen later (see ``_merge_descriptors``
+    and ``_render_property_block``).
+    """
+    if not column:
+        return None
+
+    local = _property_local_name(column, dimension_type)
+    iri = property_prefix + local
+    ctx = column_contexts.get(column) or {}
+    return {
+        "iri": iri,
+        "kind": kind,
+        "rdf_type": _PROPERTY_TYPES.get(kind, "cube:KeyDimension"),
+        "column": column,
+        "description": _coerce_str(ctx.get("description")),
+        "comment": _coerce_str(ctx.get("comment")),
+    }
+
+
+def _merge_descriptors(
+    descriptors: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Group descriptors by IRI; first-wins for ``schema:name`` / ``kind``.
+
+    When multiple proposal entries collide on the same property IRI — for
+    instance two temporal dimensions both mapped to ``ZEIT`` — only the
+    first is emitted; non-empty ``description`` / ``comment`` from later
+    entries back-fill empty fields on the first. A warning is logged
+    naming every colliding column so the user can fix the proposal or
+    rename the source columns.
+    """
+    merged: dict[str, dict[str, Any]] = {}
+    collisions: dict[str, list[str]] = {}
+    for d in descriptors:
+        iri = d["iri"]
+        if iri not in merged:
+            merged[iri] = dict(d)
+            continue
+        existing = merged[iri]
+        collisions.setdefault(iri, [existing["column"]]).append(d["column"])
+        for field in ("description", "comment"):
+            if not existing[field] and d[field]:
+                existing[field] = d[field]
+    for iri, columns in collisions.items():
+        logger.warning(
+            "Multiple proposal entries map to the same property IRI <%s>: "
+            "%s. Emitting a single merged block from the first entry — "
+            "remap the conflicting columns in the proposal step or rename "
+            "them upstream.",
+            iri,
+            ", ".join(columns),
+        )
+    return list(merged.values())
+
+
+def _render_property_block(d: dict[str, Any]) -> str:
+    """Render one merged property descriptor as a Turtle block."""
+    lines = [f"<{d['iri']}> a {d['rdf_type']}"]
+    lines.append(_indent(f"schema:name {_turtle_string(d['column'])}"))
+    if d["description"]:
+        lines.append(_indent(f"schema:description {_turtle_string(d['description'])}"))
+    if d["comment"]:
+        lines.append(_indent(f"schema:disambiguatingDescription {_turtle_string(d['comment'])}"))
+    return " ;\n".join(lines) + " .\n"
+
+
 def generate_metadata(
     base_uri: str,
     dataset_context: dict[str, Any] | None = None,
     output_folder: str | None = None,
+    mapping_proposal: dict[str, Any] | None = None,
 ) -> str:
     """Convenience wrapper around :class:`MetadataGenerator`."""
-    return MetadataGenerator().generate(base_uri, dataset_context, output_folder)
+    return MetadataGenerator().generate(
+        base_uri,
+        dataset_context,
+        output_folder,
+        mapping_proposal,
+    )

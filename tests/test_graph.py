@@ -783,6 +783,23 @@ class TestWriteLocalOutput:
         assert (target / "data.csv").exists()
         assert (target / "PR.md").exists()
 
+    def test_csv_always_written_as_data_csv(self, tmp_path, monkeypatch):
+        """Source filenames other than data.csv get normalised on disk."""
+        monkeypatch.chdir(tmp_path)
+        target = _write_local_output(
+            mapping_name="x",
+            output_folder="x",
+            rml_content="mappings: {}\n",
+            pr_description="body",
+            csv_filename="weird name.original.csv",
+            csv_content="a,b\n1,2\n",
+            metadata_content=None,
+        )
+        assert (target / "data.csv").exists()
+        assert not (target / "weird name.original.csv").exists()
+        # Original filename survives in PR.md so the source is not lost.
+        assert "weird name.original.csv" in (target / "PR.md").read_text()
+
 
 class TestConfirmNameNode:
     """Tests for confirm_name_node setting mapping_name."""

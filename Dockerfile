@@ -7,13 +7,18 @@
 
 FROM python:3.11-slim
 
-# Docker CLI + curl (for healthchecks / smoke scripts) + bash (for the
-# helper scripts under tests/e2e). No daemon, no containerd.
+# Bring in the Docker CLI (no daemon) from the official image so the app
+# can spawn sibling containers via the host daemon mounted at
+# /var/run/docker.sock. This is more reliable than the Debian `docker.io`
+# package on the slim base.
+COPY --from=docker:27-cli /usr/local/bin/docker /usr/local/bin/docker
+
+# curl for healthchecks / smoke scripts, bash for the helper scripts
+# under tests/e2e, ca-certificates so curl can reach HTTPS endpoints.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
-        docker.io \
         bash \
  && rm -rf /var/lib/apt/lists/*
 

@@ -80,7 +80,6 @@ mappings:
     s: ex-obs:$(YearCol)_$(RegionCodeCol)
     po:
       - [a, cube:Observation]
-      - ["cube:dataSet", "ex:observation-set~iri"]
       - [ex-property:ZEIT, $(YearCol), xsd:gYear]
       - [ex-property:RAUM, ex-code:$(RegionCodeCol)~iri]
   regionCodes:
@@ -95,19 +94,12 @@ mappings:
 ## ObservationSet Link (REQUIRED)
 
 The static metadata file declares `<{base_uri}observation-set>` as a \
-`cube:ObservationSet`. Two links must be emitted by the YARRRML:
-
-1. Each observation MUST point at the ObservationSet via `cube:dataSet`. \
-This belongs in the `observations` mapping above and uses a prefixed \
-CURIE + `~iri`:
-
-```yaml
-    po:
-      - ["cube:dataSet", "ex:observation-set~iri"]
-```
-
-2. The reverse `cube:observation` link, in its own mapping, with the \
-ObservationSet IRI as subject:
+`cube:ObservationSet`. The YARRRML must add a per-row mapping that links \
+this set to each generated observation via `cube:observation` (the \
+ObservationSet → Observation direction is the canonical cube.link link; \
+there is no `cube:dataSet` predicate — do **not** emit one from \
+observations). Use the **same subject template** as the `observations` \
+mapping for the object position so the IRIs match exactly:
 
 ```yaml
   observationSetLink:
@@ -213,13 +205,13 @@ string + `~iri`, no angle brackets):
 
 ```yaml
 # WRONG — angle-bracket IRI in object position:
-- ["cube:dataSet", <https://ld.domain.ch/statistics/observation-set>]
+- [cube:observation, <https://ld.domain.ch/statistics/observation/2024_CH>]
 
 # CORRECT — prefixed CURIE + ~iri (the prefix is declared in prefixes:):
-- ["cube:dataSet", "ex:observation-set~iri"]
+- [cube:observation, "ex-obs:2024_CH~iri"]
 
 # Also correct — full IRI as a string + ~iri (no angle brackets):
-- ["cube:dataSet", "https://ld.domain.ch/statistics/observation-set~iri"]
+- [cube:observation, "https://ld.domain.ch/statistics/observation/2024_CH~iri"]
 ```
 
 ### Key Dimensions vs Measures
@@ -305,9 +297,9 @@ subject (`s:`). In object position, use a prefixed CURIE + `~iri`, or a
 plain IRI string + `~iri`:
 ```yaml
 # Wrong — bare angle-bracket IRI in object position:
-- ["cube:dataSet", <https://ld.domain.ch/statistics/observation-set>]
+- [cube:observation, <https://ld.domain.ch/statistics/observation/2024_CH>]
 # Correct — prefixed CURIE + ~iri:
-- ["cube:dataSet", "ex:observation-set~iri"]
+- [cube:observation, "ex-obs:2024_CH~iri"]
 ```
 """
 

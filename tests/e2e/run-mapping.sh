@@ -5,11 +5,13 @@
 #
 # The folder must contain:
 #   - mapping.yarrrml.yaml  (with the {CSV_SOURCE} placeholder)
-#   - exactly one CSV file  (the source data)
+#   - data.csv              (the source data, always named data.csv by the
+#                            --local writer)
 #
-# The script substitutes {CSV_SOURCE} with "data.csv", renames the source CSV
-# to data.csv in a temporary working directory, runs yarrrml-parser and
-# RMLMapper via Docker, and writes observations.ttl back into <results-folder>.
+# The script copies the folder's `data.csv` into a temp work-dir, substitutes
+# the YARRRML's {CSV_SOURCE} placeholder with `data.csv`, runs yarrrml-parser
+# + RMLMapper via Docker, and writes observations.ttl back into
+# <results-folder>.
 
 set -euo pipefail
 
@@ -30,20 +32,11 @@ if [[ ! -f "$MAPPING" ]]; then
   exit 1
 fi
 
-# Find the source CSV in the folder (expect exactly one).
-shopt -s nullglob
-CSV_FILES=("$FOLDER"/*.csv)
-shopt -u nullglob
-if [[ ${#CSV_FILES[@]} -eq 0 ]]; then
-  echo "Error: no .csv file found in $FOLDER" >&2
+CSV_SRC="$FOLDER/data.csv"
+if [[ ! -f "$CSV_SRC" ]]; then
+  echo "Error: missing data.csv in $FOLDER" >&2
   exit 1
 fi
-if [[ ${#CSV_FILES[@]} -gt 1 ]]; then
-  echo "Error: more than one .csv file in $FOLDER" >&2
-  printf '  %s\n' "${CSV_FILES[@]}" >&2
-  exit 1
-fi
-CSV_SRC="${CSV_FILES[0]}"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

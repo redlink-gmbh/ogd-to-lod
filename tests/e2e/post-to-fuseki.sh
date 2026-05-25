@@ -89,4 +89,4 @@ fi
 post_turtle "$FOLDER/observations.ttl"
 post_turtle "$FOLDER/metadata.ttl"
 
-echo "Done. Browse the dataset at ${FUSEKI_URL%/data}"
+echo "Done. SPARQL the dataset at ${FUSEKI_URL%}"

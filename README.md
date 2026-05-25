@@ -120,17 +120,17 @@ the host daemon.
 # Build the image once:
 docker compose build
 
+# Optional: bring up Fuseki alongside (same config as tests/e2e):
+docker compose --profile fuseki up -d
+
 # One-shot run against the bundled example (interactive prompts work
 # under `compose run`):
 docker compose run --rm ogd-to-lod \
-    example/weather-binningen-hourly/data.small.csv \
+    example/weather-binningen-hourly/data.csv \
     --output-folder weather-binningen-hourly \
     --context example/weather-binningen-hourly/dcat.ttl \
               example/weather-binningen-hourly/fields.txt \
     --local
-
-# Optional: bring up Fuseki alongside (same config as tests/e2e):
-docker compose --profile fuseki up -d
 ```
 
 Credentials come from `.env` (same variables as the native install).
@@ -168,24 +168,28 @@ description (`dcat.ttl`), and a plain-text column glossary
 ```bash
 # CSV only (no context)
 ogd-to-lod example/weather-binningen-hourly/data.csv \
-    --output-folder weather-binningen-hourly
+    --output-folder weather-binningen-hourly \
+    --local
 
 # With a DCAT metadata file
 ogd-to-lod example/weather-binningen-hourly/data.csv \
     --output-folder weather-binningen-hourly \
-    --context example/weather-binningen-hourly/dcat.ttl
+    --context example/weather-binningen-hourly/dcat.ttl \
+    --local
 
 # With multiple context files (DCAT + column documentation)
 ogd-to-lod example/weather-binningen-hourly/data.csv \
     --output-folder weather-binningen-hourly \
     --context example/weather-binningen-hourly/dcat.ttl \
-              example/weather-binningen-hourly/fields.txt
+              example/weather-binningen-hourly/fields.txt \
+    --local
 
 # Override base URI
 ogd-to-lod example/weather-binningen-hourly/data.csv \
     --output-folder weather-binningen-hourly \
     --context example/weather-binningen-hourly/dcat.ttl \
-    --base-uri https://example.org/data/
+    --base-uri https://example.org/data/ \
+    --local
 ```
 
 The resulting PR will contain two files in `{mappings_folder}/{output-folder}/`:
@@ -201,13 +205,15 @@ folder at the project root instead:
 ```
 results/<YYYYMMDD-HHMMSS>-<output-folder>/
 ├── mapping.yarrrml.yaml   # generated YARRRML mapping
-├── {csv_filename}          # CSV source file
+├── data.csv                # CSV source file (always renamed to data.csv)
 ├── PR.md                   # PR description as Markdown
 └── metadata.ttl            # static metadata (when generated)
 ```
 
-The `results/` folder is created on demand. No GitHub credentials are required
-in this mode.
+The CSV is always written as `data.csv` so the YARRRML's `{CSV_SOURCE}`
+placeholder has a predictable substitution target; the original source
+filename is recorded in the header of `PR.md`. The `results/` folder is
+created on demand. No GitHub credentials are required in this mode.
 
 ### Context Files
 

@@ -112,3 +112,151 @@ def test_output_folder_works_without_trailing_slash_base():
     )
     assert "<https://example.org/foo/bar> a cube:Cube" in ttl
     assert "<https://example.org/foo/bar/observation-set> a cube:ObservationSet" in ttl
+
+
+# ---------- Per-property metadata blocks ----------
+
+
+def _proposal(dimensions, measures):
+    return {"dimensions": dimensions, "measures": measures, "skipped_columns": []}
+
+
+def test_property_blocks_emitted_for_dimensions_and_measures():
+    ttl = generate_metadata(
+        BASE,
+        {
+            "column_contexts": {
+                "year": {"description": "The year of observation."},
+                "region": {"description": "Statistical region code."},
+                "value": {"description": "Observed value."},
+            }
+        },
+        output_folder="population",
+        mapping_proposal=_proposal(
+            dimensions=[
+                {"column": "year", "type": "temporal"},
+                {"column": "region", "type": "spatial"},
+            ],
+            measures=[{"column": "value"}],
+        ),
+    )
+    assert (
+        "<https://example.org/datasets/foo/population/property/ZEIT> "
+        "a cube:KeyDimension"
+    ) in ttl
+    assert 'schema:name "year"' in ttl
+    assert 'schema:description "The year of observation."' in ttl
+    assert (
+        "<https://example.org/datasets/foo/population/property/RAUM> "
+        "a cube:KeyDimension"
+    ) in ttl
+    assert (
+        "<https://example.org/datasets/foo/population/property/value> "
+        "a cube:MeasureDimension"
+    ) in ttl
+
+
+def test_property_block_sanitisation_matches_prompt_convention():
+    ttl = generate_metadata(
+        BASE,
+        {"column_contexts": {}},
+        output_folder="aq",
+        mapping_proposal=_proposal(
+            dimensions=[],
+            measures=[
+                {"column": "O3 [ug/m3]"},
+                {"column": "PM2.5 [ug/m3]"},
+            ],
+        ),
+    )
+    assert "<https://example.org/datasets/foo/aq/property/O3_ug_m3>" in ttl
+    assert "<https://example.org/datasets/foo/aq/property/PM2_5_ug_m3>" in ttl
+
+
+def test_no_mapping_proposal_emits_no_property_blocks():
+    ttl = generate_metadata(BASE, None, output_folder="x", mapping_proposal=None)
+    assert "property/" not in ttl
+
+
+def test_property_block_falls_back_to_header_when_no_description():
+    """schema:name is always emitted from the column header, even without context."""
+    ttl = generate_metadata(
+        BASE,
+        None,
+        output_folder="x",
+        mapping_proposal=_proposal(
+            dimensions=[{"column": "Region"}],
+            measures=[],
+        ),
+    )
+    assert 'schema:name "Region"' in ttl
+    # The cube block's schema:description doesn't apply here — search
+    # inside the property block specifically.
+    property_block = ttl.split("a cube:KeyDimension")[1]
+    assert "schema:description" not in property_block
+
+
+def test_property_block_comment_emitted_as_disambiguating_description():
+    ttl = generate_metadata(
+        BASE,
+        {"column_contexts": {"region": {"description": "d", "comment": "c"}}},
+        output_folder="x",
+        mapping_proposal=_proposal(
+            dimensions=[{"column": "region"}],
+            measures=[],
+        ),
+    )
+    assert 'schema:disambiguatingDescription "c"' in ttl
+
+
+def test_colliding_property_iris_emit_one_merged_block():
+    """Two temporal dimensions collide on ZEIT — emit one block, first wins."""
+    ttl = generate_metadata(
+        BASE,
+        {
+            "column_contexts": {
+                "datetime": {"description": "Zeitstempel in UTC."},
+                "ZEIT_LOCAL": {"description": "Local-time timestamp."},
+            }
+        },
+        output_folder="x",
+        mapping_proposal=_proposal(
+            dimensions=[
+                {"column": "datetime", "type": "temporal"},
+                {"column": "ZEIT_LOCAL", "type": "temporal"},
+            ],
+            measures=[],
+        ),
+    )
+
+    # Exactly one block for the ZEIT IRI, with the FIRST column's name.
+    iri = "<https://example.org/datasets/foo/x/property/ZEIT>"
+    assert ttl.count(f"{iri} a cube:KeyDimension") == 1
+    assert 'schema:name "datetime"' in ttl
+    assert 'schema:name "ZEIT_LOCAL"' not in ttl
+    # First entry's description survives.
+    assert 'schema:description "Zeitstempel in UTC."' in ttl
+
+
+def test_collision_back_fills_missing_description_from_second_entry():
+    """First column has no description; second does — second's wins."""
+    ttl = generate_metadata(
+        BASE,
+        {
+            "column_contexts": {
+                # "datetime" deliberately missing — no entry in column_contexts.
+                "ZEIT_LOCAL": {"description": "Local-time fallback."},
+            }
+        },
+        output_folder="x",
+        mapping_proposal=_proposal(
+            dimensions=[
+                {"column": "datetime", "type": "temporal"},
+                {"column": "ZEIT_LOCAL", "type": "temporal"},
+            ],
+            measures=[],
+        ),
+    )
+    # First column's name is kept, second's description back-fills.
+    assert 'schema:name "datetime"' in ttl
+    assert 'schema:description "Local-time fallback."' in ttl

@@ -68,5 +68,26 @@ services:
       - fuseki-data:/fuseki
     restart: unless-stopped
 
+  # Optional Linked-Data browser / dereferencer. Activate with
+  # `--profile trifid` (after bringing up Fuseki via `--profile fuseki`).
+  # Trifid proxies SPARQL to Fuseki and serves a browsable HTML view
+  # for each resource IRI at http://localhost:8080/.
+  #
+  # DATASET_BASE_URL must match the host prefix of the IRIs you want to
+  # dereference. The default below matches the example dataset shipped
+  # with this repo (https://ld.domain.ch/statistics/<slug>/...). Change
+  # it to whatever your generated cube IRIs use.
+  trifid:
+    image: zazuko/trifid:latest
+    container_name: ogd-trifid
+    profiles:
+      - trifid
+    ports:
+      - "8080:8080"
+    environment:
+      - SPARQL_ENDPOINT_URL=http://fuseki:3030/test/query
+      - DATASET_BASE_URL=${DATASET_BASE_URL:-https://ld.domain.ch}
+    restart: unless-stopped
+
 volumes:
   fuseki-data:

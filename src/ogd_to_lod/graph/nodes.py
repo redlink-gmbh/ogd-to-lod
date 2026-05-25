@@ -454,11 +454,15 @@ def generate_node(state: GraphState, ai_service: AIService) -> GraphState:
 
         logger.info(f"Successfully generated YARRRML ({len(rml_content)} characters)")
 
-        # Generate companion static metadata Turtle (cube:Cube + ObservationSet)
+        # Generate companion static metadata Turtle (cube:Cube + ObservationSet
+        # + per-property schema:name/description)
         state.generated_metadata = generate_metadata(
             state.base_uri,
             state.dataset_context,
             output_folder=state.output_folder,
+            mapping_proposal=state.mapping_proposal.to_dict()
+            if state.mapping_proposal
+            else None,
         )
         logger.info(
             "Generated metadata.ttl (%d characters)",
@@ -715,8 +719,11 @@ def _write_local_output(
     """Write mapping artifacts to a timestamped folder under ``results/``.
 
     The folder is created at the project root (current working directory) and
-    contains the YARRRML mapping, the source CSV, the PR description as
-    Markdown, and optionally the static metadata Turtle.
+    contains the YARRRML mapping, the source CSV (always written as
+    ``data.csv`` so the YARRRML's ``{CSV_SOURCE}`` placeholder has a
+    predictable target), the PR description as Markdown — with the original
+    source filename recorded in its header — and optionally the static
+    metadata Turtle.
 
     Returns:
         The path of the timestamped folder that was created.
@@ -727,9 +734,12 @@ def _write_local_output(
     target_dir.mkdir(parents=True, exist_ok=True)
 
     (target_dir / "mapping.yarrrml.yaml").write_text(rml_content, encoding="utf-8")
-    (target_dir / csv_filename).write_text(csv_content, encoding="utf-8")
+    (target_dir / "data.csv").write_text(csv_content, encoding="utf-8")
     (target_dir / "PR.md").write_text(
-        f"# {mapping_name}\n\n{pr_description}\n", encoding="utf-8"
+        f"# {mapping_name}\n\n"
+        f"_Source CSV filename: `{csv_filename}` (stored locally as `data.csv`)_\n\n"
+        f"{pr_description}\n",
+        encoding="utf-8",
     )
     if metadata_content:
         (target_dir / "metadata.ttl").write_text(metadata_content, encoding="utf-8")
