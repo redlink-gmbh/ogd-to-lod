@@ -18,6 +18,7 @@ class FlowState(Enum):
     GENERATE = "generate"
     VALIDATE = "validate"
     CONFIRM_NAME = "confirm_name"
+    CONFIRM_PROPOSED_CSV_URL = "confirm_proposed_csv_url"
     ASK_CSV_URL = "ask_csv_url"
     PREVIEW = "preview"
     CREATE_PR = "create_pr"
@@ -152,6 +153,7 @@ class GraphState:
 
     # Source URL (populated in ASK_CSV_URL state)
     csv_source_url: str | None = None
+    proposed_csv_source_url: str | None = None
 
     context_raw_files: list[dict] = field(default_factory=list)  # all context files
 
@@ -204,6 +206,7 @@ class GraphState:
             "mapping_decisions": self.mapping_decisions,
             "mapping_name": self.mapping_name,
             "csv_source_url": self.csv_source_url,
+            "proposed_csv_source_url": self.proposed_csv_source_url,
             "context_raw_files": self.context_raw_files,
             "pr_description": self.pr_description,
             "validation_error": self.validation_error,

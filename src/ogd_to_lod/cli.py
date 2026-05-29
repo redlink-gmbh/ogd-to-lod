@@ -13,6 +13,14 @@ from ogd_to_lod.logging import get_logger
 logger = get_logger(__name__)
 
 
+def compose_dataset_csv_source_url(base_url: str, dataset_id: str) -> str:
+    """Compose the proposed public CSV source URL for dataset-id mode."""
+    return (
+        f"{base_url}/catalog/datasets/{dataset_id}/exports/csv"
+        "?&use_labels=true&delimiter=%2C"
+    )
+
+
 def format_token_stats(flow: MappingFlow) -> str:
     """Format token usage statistics as a string.
 
@@ -161,6 +169,7 @@ def main() -> int:
     csv_path = args.csv_path
     context_paths = args.context_paths or []
     output_folder = args.output_folder
+    proposed_csv_source_url: str | None = None
 
     if args.dataset_id:
         output_folder = output_folder or args.dataset_id
@@ -178,6 +187,7 @@ def main() -> int:
             normalized_domain = normalized_domain[len("http://"):]
         normalized_domain = normalized_domain.strip("/")
         base_url = f"https://{normalized_domain}/api/explore/v2.1"
+        proposed_csv_source_url = compose_dataset_csv_source_url(base_url, args.dataset_id)
         try:
             setup = prepare_dataset_inputs(dataset_id=args.dataset_id, base_url=base_url)
         except DatasetSetupError as e:
@@ -213,6 +223,7 @@ def main() -> int:
             base_uri=args.base_uri,
             output_folder=output_folder,
             local_output=args.local,
+            proposed_csv_source_url=proposed_csv_source_url,
         )
     except Exception as e:
         logger.exception("Failed to start mapping flow")
@@ -243,6 +254,12 @@ def main() -> int:
         if flow.is_awaiting_name_confirmation():
             name = flow.state.mapping_name or "mapping"
             prompt = f"Dataset name ['{name}']: "
+        elif flow.is_awaiting_proposed_csv_url_confirmation():
+            proposed_url = flow.get_proposed_csv_source_url() or ""
+            print("Proposed public CSV source URL:")
+            print(proposed_url)
+            print("")
+            prompt = "Use this public CSV source URL? (yes/no): "
         elif flow.is_awaiting_csv_url():
             prompt = "Public CSV source URL (Enter to skip): "
         elif flow.is_awaiting_pr_confirmation():
@@ -266,6 +283,7 @@ def main() -> int:
         # Allow empty input for name confirmation and URL states (Enter = skip)
         allows_empty = (
             flow.is_awaiting_name_confirmation()
+            or flow.is_awaiting_proposed_csv_url_confirmation()
             or flow.is_awaiting_csv_url()
         )
         if not user_input and not allows_empty:
