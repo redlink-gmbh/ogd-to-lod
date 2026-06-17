@@ -1,0 +1,86 @@
+# Push mapping.yarrrml.yaml to Huwise after it lands on main (mappings repo layout).
+#
+# Secrets required: HUWISE_DOMAIN, HUWISE_API_KEY
+#
+# Manual run: Actions → Push YARRRML to Huwise → Run workflow
+# Auto run: push to main under mapping/**/mapping.yarrrml.yaml
+
+name: Push YARRRML to Huwise
+
+on:
+  workflow_dispatch:
+    inputs:
+      dataset_id:
+        description: Huwise dataset_id (e.g. 100051)
+        required: true
+        type: string
+      mapping_folder:
+        description: Folder containing mapping.yarrrml.yaml (e.g. mapping/weather-binningen-hourly)
+        required: true
+        type: string
+      dry_run:
+        description: Dry run (no PUT/POST)
+        required: false
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - "mapping/**/mapping.yarrrml.yaml"
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve mapping folder (push event)
+        if: github.event_name == 'push'
+        id: detect
+        run: |
+          mapfile -t files < <(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" \
+            | grep -E '^mapping/.+/mapping\.yarrrml\.yaml$' || true)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "No mapping.yarrrml.yaml changes detected; skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          folder="$(dirname "${files[0]}")"
+          echo "folder=${folder}" >> "$GITHUB_OUTPUT"
+          echo "Detected mapping folder: ${folder}"
+
+      - name: Push to Huwise (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == false
+        env:
+          HUWISE_DOMAIN: ${{ secrets.HUWISE_DOMAIN }}
+          HUWISE_API_KEY: ${{ secrets.HUWISE_API_KEY }}
+        run: |
+          scripts/push-yarrrml-after-merge.sh \
+            --dataset-id "${{ inputs.dataset_id }}" \
+            "${{ inputs.mapping_folder }}"
+
+      - name: Dry run (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == true
+        env:
+          HUWISE_DOMAIN: ${{ secrets.HUWISE_DOMAIN }}
+          HUWISE_API_KEY: ${{ secrets.HUWISE_API_KEY }}
+        run: |
+          scripts/push-yarrrml-after-merge.sh --dry-run \
+            --dataset-id "${{ inputs.dataset_id }}" \
+            "${{ inputs.mapping_folder }}"
+
+      - name: Push to Huwise (push to main)
+        if: github.event_name == 'push' && steps.detect.outputs.skip != 'true'
+        env:
+          HUWISE_DOMAIN: ${{ secrets.HUWISE_DOMAIN }}
+          HUWISE_API_KEY: ${{ secrets.HUWISE_API_KEY }}
+          HUWISE_DATASET_ID: ${{ vars.HUWISE_DATASET_ID }}
+        run: |
+          if [[ -z "${HUWISE_DATASET_ID:-}" ]]; then
+            echo "Set repository variable HUWISE_DATASET_ID for automatic push on main," >&2
+            echo "or run this workflow manually with workflow_dispatch." >&2
+            exit 1
+          fi
+          scripts/push-yarrrml-after-merge.sh \
+            --dataset-id "${HUWISE_DATASET_ID}" \
+            "${{ steps.detect.outputs.folder }}"

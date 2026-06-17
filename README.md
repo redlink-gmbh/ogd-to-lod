@@ -78,6 +78,8 @@ The application uses a YAML configuration file (`config/config.yaml`) with envir
 |----------|-------------|---------|
 | `GITHUB_REPO` | Target repository for generated mappings | `redlink-gmbh/ogd-to-lod-mappings` |
 | `LOG_LEVEL` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) | `INFO` |
+| `HUWISE_DOMAIN` | Huwise domain used to derive `https://<domain>/api/explore/v2.1` (required only with `--dataset-id`) | unset |
+| `HUWISE_API_KEY` | Huwise Automation API key for [`tests/e2e/push-to-huwise.sh`](tests/e2e/push-to-huwise.sh) | unset |
 
 ### Configuration File
 
@@ -136,6 +138,11 @@ docker compose run --rm ogd-to-lod \
     --context example/weather-binningen-hourly/dcat.ttl \
               example/weather-binningen-hourly/fields.txt \
     --local
+
+# One-shot run with dataset bootstrap (downloads CSV + metadata first):
+docker compose run --rm ogd-to-lod \
+    --dataset-id 100051 \
+    --local
 ```
 
 Credentials come from `.env` (same variables as the native install).
@@ -144,14 +151,17 @@ Credentials come from `.env` (same variables as the native install).
 
 ```bash
 ogd-to-lod <csv_path> --output-folder <folder> [--context FILE ...]
+# or
+ogd-to-lod --dataset-id <id> [--output-folder <folder>]
 ```
 
 ### Arguments
 
 | Argument | Description |
 |----------|-------------|
-| `csv_path` | Path to the CSV file to map (required) |
-| `--output-folder FOLDER` | Target subfolder name in the mappings directory (required). The CSV and YARRRML files are pushed to `{mappings_folder}/{output-folder}/` in the repository. |
+| `csv_path` | Path to the CSV file to map (required for file-path mode) |
+| `--dataset-id ID` | Dataset identifier for bootstrap mode. The CLI downloads CSV + metadata from Huwise before running the normal workflow. |
+| `--output-folder FOLDER` | Target subfolder name in the mappings directory. Required for file-path mode; defaults to `--dataset-id` in dataset mode. |
 | `--context FILE [FILE ...]` | One or more context files describing the dataset. Any format is accepted: DCAT (JSON-LD, Turtle, RDF/XML), Markdown, plain text, JSON, or combinations thereof. |
 
 ### Options
@@ -161,6 +171,7 @@ ogd-to-lod <csv_path> --output-folder <folder> [--context FILE ...]
 | `--config` | `-c` | Path to configuration file (default: `config/config.yaml`) |
 | `--base-uri` | `-b` | Base URI for generated resources (overrides config) |
 | `--local` | | Write results to `results/<timestamp>-<output-folder>/` instead of opening a GitHub PR |
+| `--dataset-id` | | Bootstrap CSV/context from Huwise API using dataset id |
 | `--help` | | Show help message |
 
 ### Examples
@@ -195,7 +206,27 @@ ogd-to-lod example/weather-binningen-hourly/data.csv \
     --context example/weather-binningen-hourly/dcat.ttl \
     --base-uri https://example.org/data/ \
     --local
+
+# Dataset bootstrap mode (requires HUWISE_DOMAIN)
+ogd-to-lod --dataset-id 100051 --local
 ```
+
+### Dataset Bootstrap Mode (`--dataset-id`)
+
+When `--dataset-id` is used, the CLI derives the base URL (derived_base_url) as:
+
+- `https://<HUWISE_DOMAIN>/api/explore/v2.1`
+
+Then it runs a setup phase before the mapping flow:
+
+- fetches dataset metadata JSON from `<derived_base_url>/catalog/datasets/{id}`
+- fetches CSV export from `<derived_base_url>/catalog/datasets/{id}/exports/csv`
+- fetches DCAT Turtle from `<derived_base_url>/catalog/exports/ttl?where=dataset_id="{id}"`
+- generates a `fields.json` context file from the dataset `fields` schema
+
+Setup artifacts are written under `.work/dataset_setup/<timestamp>-<dataset-id>/` and then passed into the existing pipeline as local inputs.
+
+If `--dataset-id` is set and `HUWISE_DOMAIN` is missing, the CLI aborts with an explicit error.
 
 The resulting PR will contain two files in `{mappings_folder}/{output-folder}/`:
 
@@ -305,6 +336,33 @@ tests/e2e/post-to-fuseki.sh --clean results/<YYYYMMDD-HHMMSS>-<output-folder>
 Protocol with HTTP basic auth; override `FUSEKI_URL` /
 `FUSEKI_UPDATE_URL` / `FUSEKI_USER` / `FUSEKI_PASSWORD` to point at a
 different endpoint.
+
+### Push YARRRML to Huwise (Automation API)
+
+After `--local` (or from a merged `mapping/<folder>/mapping.yarrrml.yaml`), push
+the mapping into Huwise `semantic.rml_mapping` metadata:
+
+```bash
+# Verify semantic template + rml_mapping field on your portal
+tests/e2e/push-to-huwise.sh --check
+
+# From a results folder (HACKATHON.md Step 3)
+tests/e2e/push-to-huwise.sh --dataset-id 100051 results/<timestamp>-<output-folder>
+
+# From mappings-repo layout after merge
+scripts/push-yarrrml-after-merge.sh --dataset-id 100051 mapping/<output-folder>
+```
+
+Requires `HUWISE_DOMAIN` and `HUWISE_API_KEY` in `.env`, plus host `python3`
+with PyYAML (`pip install -e .`). Prepares ogd-to-lod YARRRML for the
+[Huwise TPF mapping dialect](https://help.opendatasoft.com/apis/tpf), then uses
+[Automation API](https://developer.huwise.com/apis/automation/v1.0/index.html)
+(`PUT .../metadata/semantic/rml_mapping/` then `POST .../publish_metadata/`).
+Verifies RDF via `https://<HUWISE_DOMAIN>/api/tpf/<DATASET_ID>/` after publish.
+
+Optional: GitHub Actions workflow [`.github/workflows/push-huwise-mapping.yml`](.github/workflows/push-huwise-mapping.yml)
+(manual `workflow_dispatch`, or push to `main` under `mapping/**/mapping.yarrrml.yaml`
+with repo variable `HUWISE_DATASET_ID` and secrets `HUWISE_DOMAIN`, `HUWISE_API_KEY`).
 
 ## Project Structure
 
