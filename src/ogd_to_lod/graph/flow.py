@@ -381,6 +381,7 @@ class MappingFlow:
         base_uri: str | None = None,
         output_folder: str | None = None,
         local_output: bool = False,
+        proposed_csv_source_url: str | None = None,
     ) -> GraphState:
         """Start the mapping flow.
 
@@ -403,6 +404,7 @@ class MappingFlow:
             base_uri=base_uri,
             output_folder=output_folder,
             local_output=local_output,
+            proposed_csv_source_url=proposed_csv_source_url,
         )
 
         # Run until we need user input
@@ -433,6 +435,9 @@ class MappingFlow:
             return self._handle_name_confirmation(user_input)
 
         # Handle source URL and context inclusion states
+        if self._state.current_state == FlowState.CONFIRM_PROPOSED_CSV_URL:
+            return self._handle_proposed_csv_url_confirmation(user_input)
+
         if self._state.current_state == FlowState.ASK_CSV_URL:
             return self._handle_csv_url(user_input)
 
@@ -598,6 +603,15 @@ class MappingFlow:
         else:
             logger.info("User accepted suggested name: %s", self._state.mapping_name)
 
+        if self._state.proposed_csv_source_url:
+            self._state.current_state = FlowState.CONFIRM_PROPOSED_CSV_URL
+            self._state.awaiting_user_input = True
+            self._state.add_message(
+                "assistant",
+                "Use this public CSV source URL? (yes/no):",
+            )
+            return self._state
+
         # Transition to ASK_CSV_URL
         self._state.current_state = FlowState.ASK_CSV_URL
         self._state.awaiting_user_input = True
@@ -605,6 +619,36 @@ class MappingFlow:
             "assistant",
             "Enter the public URL for the CSV source (or press Enter to skip):",
         )
+
+        return self._state
+
+    def _handle_proposed_csv_url_confirmation(self, user_input: str) -> GraphState:
+        """Handle yes/no confirmation for proposed dataset-id CSV source URL."""
+        self._state.add_message("user", user_input)
+        answer = user_input.lower().strip()
+
+        if answer in ("yes", "y", "ok", "sure", "proceed"):
+            self._state.csv_source_url = self._state.proposed_csv_source_url
+            logger.info(
+                "User accepted proposed CSV source URL: %s",
+                self._state.proposed_csv_source_url,
+            )
+            self._state = preview_node(self._state, self._ai_service)
+        elif answer in ("no", "n", "cancel", "skip", "exit", "quit"):
+            logger.info("User declined proposed CSV source URL")
+            self._state.current_state = FlowState.ASK_CSV_URL
+            self._state.awaiting_user_input = True
+            self._state.add_message(
+                "assistant",
+                "Enter the public URL for the CSV source (or press Enter to skip):",
+            )
+        else:
+            self._state.current_state = FlowState.CONFIRM_PROPOSED_CSV_URL
+            self._state.awaiting_user_input = True
+            self._state.add_message(
+                "assistant",
+                "Please answer with 'yes' or 'no'.",
+            )
 
         return self._state
 
@@ -741,6 +785,17 @@ class MappingFlow:
             self._state.current_state == FlowState.ASK_CSV_URL
             and self._state.awaiting_user_input
         )
+
+    def is_awaiting_proposed_csv_url_confirmation(self) -> bool:
+        """Check if flow is waiting for proposed CSV URL confirmation."""
+        return (
+            self._state.current_state == FlowState.CONFIRM_PROPOSED_CSV_URL
+            and self._state.awaiting_user_input
+        )
+
+    def get_proposed_csv_source_url(self) -> str | None:
+        """Get the proposed CSV source URL for dataset-id mode."""
+        return self._state.proposed_csv_source_url
 
     def get_pr_description(self) -> str | None:
         """Get the built PR description."""

@@ -40,7 +40,7 @@ def prepare_dataset_inputs(dataset_id: str, base_url: str) -> DatasetSetupResult
 
     metadata_url = f"{base_url}/catalog/datasets/{quote(dataset_id)}"
     csv_url = f"{base_url}/catalog/datasets/{quote(dataset_id)}/exports/csv?" + urlencode(
-        {"delimiter": ",", "use_labels": "true"}
+        {"delimiter": ",", "use_labels": "true", "limit": "20"}
     )
     ttl_where = f'dataset_id="{dataset_id}"'
     ttl_url = f"{base_url}/catalog/exports/ttl?" + urlencode({"where": ttl_where})

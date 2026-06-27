@@ -82,18 +82,17 @@ class GitHubService:
     ) -> PRResult:
         """Create a PR with a new RML mapping.
 
-        Creates a new branch, commits the YARRRML mapping file, the CSV
-        source file, a ``README.md`` with the PR description (rendered from
-        ``config/pr_template.md``), and optionally static metadata, then opens
-        a pull request.
+        Creates a new branch, commits the YARRRML mapping file, a ``README.md``
+        with the PR description (rendered from ``config/pr_template.md``), and
+        optionally static metadata, then opens a pull request.
 
         Args:
             mapping_name: Name for the mapping (used in PR title and commit messages).
             rml_content: The YARRRML mapping content to commit.
             description: Human-readable description for the PR body.
             output_folder: Subfolder name within the mappings parent folder.
-            csv_filename: Filename for the CSV file in the repository.
-            csv_content: Content of the CSV file to commit.
+            csv_filename: Source CSV filename (kept for API compatibility).
+            csv_content: Source CSV content (kept for API compatibility).
             metadata_content: Optional static metadata Turtle (cube:Cube +
                 ObservationSet) to commit as ``metadata.ttl``.
             base_branch: Branch to create PR against (default: main).
@@ -110,7 +109,6 @@ class GitHubService:
         branch_name = f"mapping/{safe_folder}"
         folder_path = f"{mappings_folder}/{safe_folder}"
         yarrrml_path = f"{folder_path}/mapping.yarrrml.yaml"
-        csv_path_in_repo = f"{folder_path}/{csv_filename}"
 
         logger.info(f"Creating PR for mapping: {mapping_name}")
         logger.debug(f"Branch: {branch_name}, Folder: {folder_path}")
@@ -129,13 +127,6 @@ class GitHubService:
                 branch_name, yarrrml_path, rml_content,
                 f"Add YARRRML mapping: {mapping_name}"
             )
-
-            # Commit the CSV source file
-            self._commit_file(
-                branch_name, csv_path_in_repo, csv_content,
-                f"Add CSV source: {csv_filename}"
-            )
-            logger.debug(f"Committed CSV file: {csv_path_in_repo}")
 
             # Optionally commit the static metadata Turtle
             if metadata_content:
