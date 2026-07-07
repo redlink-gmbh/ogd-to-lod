@@ -30,6 +30,7 @@ dev = [
 
 [project.scripts]
 ogd-to-lod = "ogd_to_lod.cli:main"
+ogd-to-lod-huwise = "ogd_to_lod.huwise.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ogd_to_lod"]
