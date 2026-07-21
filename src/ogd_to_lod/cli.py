@@ -8,11 +8,14 @@ from ogd_to_lod.ai import RequestLimitReached, TokenUsage
 from ogd_to_lod.config import load_config
 from ogd_to_lod.graph import FlowState, MappingFlow
 from ogd_to_lod.huwise_setup import DatasetSetupError, prepare_dataset_inputs
-from ogd_to_lod.logging import get_logger
 from ogd_to_lod.my_logging import get_logger
+from urllib.parse import urlparse
+from pathlib import Path
 
 logger = get_logger(__name__)
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_CONFIG = PROJECT_ROOT / "config" / "config.yaml"
 
 def format_token_stats(flow: MappingFlow) -> str:
     """Format token usage statistics as a string.
@@ -76,7 +79,7 @@ def main() -> int:
     parser.add_argument(
         "--config",
         "-c",
-        default="config/config.yaml",
+        default=str(DEFAULT_CONFIG),
         help="Path to configuration file (default: config/config.yaml)",
     )
     parser.add_argument(
@@ -172,13 +175,10 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
-        normalized_domain = huwise_domain
-        if normalized_domain.startswith("https://"):
-            normalized_domain = normalized_domain[len("https://"):]
-        elif normalized_domain.startswith("http://"):
-            normalized_domain = normalized_domain[len("http://"):]
-        normalized_domain = normalized_domain.strip("/")
-        base_url = f"https://{normalized_domain}/api/explore/v2.1"
+        parsed = urlparse(
+            huwise_domain if "://" in huwise_domain else f"https://{huwise_domain}"
+        )
+        base_url = f"https://{parsed.netloc.rstrip('/')}/api/explore/v2.1"
         try:
             setup = prepare_dataset_inputs(dataset_id=args.dataset_id, base_url=base_url)
         except DatasetSetupError as e:
