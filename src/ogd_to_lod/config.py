@@ -193,9 +193,10 @@ def load_config(config_path: str | Path) -> Config:
             raise ValueError("azure.deployment is required")
 
         sparql_data = config_data.get("sparql", {})
-        sparql = SPARQLConfig(
-            endpoint=sparql_data.get("endpoint"),
-        )
+        if sparql_data:
+            sparql = SPARQLConfig(
+                endpoint=sparql_data.get("endpoint"),
+            )
 
         rml_data = config_data.get("rml", {})
         # Support environment variable for RMLMapper JAR path
@@ -217,13 +218,21 @@ def load_config(config_path: str | Path) -> Config:
         log_level = logging_data.get("level", os.environ.get("LOG_LEVEL", "INFO"))
         logging_config = LoggingConfig(level=log_level)
 
-        return Config(
-            github=github,
-            azure=azure,
-            sparql=sparql,
-            rml=rml,
-            logging=logging_config,
-        )
+        if sparql_data:
+            return Config(
+                github=github,
+                azure=azure,
+                sparql=sparql,
+                rml=rml,
+                logging=logging_config,
+            )
+        else:
+            return Config(
+                github=github,
+                azure=azure,
+                rml=rml,
+                logging=logging_config,
+            )
 
     except KeyError as e:
         raise ValueError(f"Missing required configuration key: {e}")
