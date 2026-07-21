@@ -10,17 +10,17 @@ import yaml
 from ogd_to_lod._slug import slugify
 from ogd_to_lod.ai import AIService
 from ogd_to_lod.config import Config
-from ogd_to_lod.github import GitHubService, PRCreationError
+from ogd_to_lod.my_github import GitHubService, PRCreationError
 from ogd_to_lod.lookup import ReuseContext, SPARQLLookup
 from ogd_to_lod.metadata import generate_metadata
-from ogd_to_lod.github.pr_template import (
+from ogd_to_lod.my_github.pr_template import (
     build_csv_preview_section,
     build_mapping_structure_section,
     build_rdf_preview_section,
     load_pr_template,
     render_pr_template,
 )
-from ogd_to_lod.logging import get_logger
+from ogd_to_lod.my_logging import get_logger
 from ogd_to_lod.parsers import (
     CSVParseError,
     ContextParseError,

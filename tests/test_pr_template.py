@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ogd_to_lod.github.pr_template import (
+from ogd_to_lod.my_github.pr_template import (
     _RDF_PREVIEW_MAX_CHARS,
     build_csv_preview_section,
     build_mapping_structure_section,

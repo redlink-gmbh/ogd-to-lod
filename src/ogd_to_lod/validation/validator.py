@@ -17,7 +17,7 @@ from pathlib import Path
 
 import yaml
 
-from ogd_to_lod.logging import get_logger
+from ogd_to_lod.my_logging import get_logger
 
 # Import the CSV source placeholder constant
 CSV_SOURCE_PLACEHOLDER = "{CSV_SOURCE}"

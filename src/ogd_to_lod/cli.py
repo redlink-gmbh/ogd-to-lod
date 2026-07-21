@@ -9,6 +9,7 @@ from ogd_to_lod.config import load_config
 from ogd_to_lod.graph import FlowState, MappingFlow
 from ogd_to_lod.huwise_setup import DatasetSetupError, prepare_dataset_inputs
 from ogd_to_lod.logging import get_logger
+from ogd_to_lod.my_logging import get_logger
 
 logger = get_logger(__name__)
 

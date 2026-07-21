@@ -10,7 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import urlopen
 
-from ogd_to_lod.logging import get_logger
+from ogd_to_lod.my_logging import get_logger
 
 logger = get_logger(__name__)
 

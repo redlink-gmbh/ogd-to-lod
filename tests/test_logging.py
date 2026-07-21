@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from ogd_to_lod.logging import (
+from ogd_to_lod.my_logging import (
     DEFAULT_TRUNCATE_LENGTH,
     StructuredFormatter,
     get_log_level,

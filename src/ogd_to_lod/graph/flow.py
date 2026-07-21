@@ -6,7 +6,7 @@ from langgraph.graph import END, StateGraph
 
 from ogd_to_lod.ai import AIService
 from ogd_to_lod.config import Config
-from ogd_to_lod.logging import get_logger
+from ogd_to_lod.my_logging import get_logger
 
 from .nodes import (
     MAX_SYNTAX_RETRIES,

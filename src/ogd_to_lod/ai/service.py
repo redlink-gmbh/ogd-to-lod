@@ -11,7 +11,7 @@ from langchain_openai import AzureChatOpenAI
 from openai import APIConnectionError, APIStatusError, RateLimitError
 
 from ogd_to_lod.config import AzureOpenAIConfig
-from ogd_to_lod.logging import get_logger
+from ogd_to_lod.my_logging import get_logger
 
 logger = get_logger(__name__)
 

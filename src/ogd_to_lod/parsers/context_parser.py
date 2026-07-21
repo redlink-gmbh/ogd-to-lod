@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 
 from ogd_to_lod.ai import AIService
-from ogd_to_lod.logging import get_logger
+from ogd_to_lod.my_logging import get_logger
 
 from .context_normalizer import ContextNormalizer
 from .models import DatasetContext

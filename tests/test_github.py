@@ -6,7 +6,7 @@ import pytest
 from github import Auth, GithubException
 
 from ogd_to_lod.config import GitHubConfig
-from ogd_to_lod.github import GitHubService, GitHubError, PRCreationError
+from ogd_to_lod.my_github import GitHubService, GitHubError, PRCreationError
 
 
 @pytest.fixture
