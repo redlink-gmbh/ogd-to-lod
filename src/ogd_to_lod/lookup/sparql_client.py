@@ -1,6 +1,6 @@
 """SPARQL-based lookup for existing cube.link properties and DefinedTerms."""
 
-from ogd_to_lod.my_logging import get_logger
+from ogd_to_lod.logging import get_logger
 
 from .reuse_context import MatchedDefinedTermSet, MatchedProperty, ReuseContext
 

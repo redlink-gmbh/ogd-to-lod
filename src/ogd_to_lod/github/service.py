@@ -8,7 +8,7 @@ from github.Repository import Repository
 
 from ogd_to_lod._slug import slugify
 from ogd_to_lod.config import GitHubConfig
-from ogd_to_lod.my_logging import get_logger
+from ogd_to_lod.logging import get_logger
 
 logger = get_logger(__name__)
 

@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ogd_to_lod.my_logging import get_logger
+from ogd_to_lod.logging import get_logger
 
 logger = get_logger(__name__)
 

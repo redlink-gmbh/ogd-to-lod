@@ -4,7 +4,7 @@ import json
 import re
 
 from ogd_to_lod.ai import AIService
-from ogd_to_lod.my_logging import get_logger
+from ogd_to_lod.logging import get_logger
 
 from .models import ColumnContext, DatasetContext, SpatialCoverage, TemporalCoverage
 
