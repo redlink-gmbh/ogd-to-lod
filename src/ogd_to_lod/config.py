@@ -82,7 +82,7 @@ class Config:
 
     github: GitHubConfig
     azure: AzureOpenAIConfig
-    sparql: SPARQLConfig = field(default_factory=SPARQLConfig)
+    sparql: SPARQLConfig | None
     rml: RMLConfig = field(default_factory=RMLConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
@@ -197,6 +197,8 @@ def load_config(config_path: str | Path) -> Config:
             sparql = SPARQLConfig(
                 endpoint=sparql_data.get("endpoint"),
             )
+        else:
+            sparql = None
 
         rml_data = config_data.get("rml", {})
         # Support environment variable for RMLMapper JAR path
@@ -218,21 +220,14 @@ def load_config(config_path: str | Path) -> Config:
         log_level = logging_data.get("level", os.environ.get("LOG_LEVEL", "INFO"))
         logging_config = LoggingConfig(level=log_level)
 
-        if sparql_data:
-            return Config(
+        return Config(
                 github=github,
                 azure=azure,
                 sparql=sparql,
                 rml=rml,
                 logging=logging_config,
-            )
-        else:
-            return Config(
-                github=github,
-                azure=azure,
-                rml=rml,
-                logging=logging_config,
-            )
+                )
+
 
     except KeyError as e:
         raise ValueError(f"Missing required configuration key: {e}")

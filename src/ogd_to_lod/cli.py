@@ -178,7 +178,7 @@ def main() -> int:
         parsed = urlparse(
             huwise_domain if "://" in huwise_domain else f"https://{huwise_domain}"
         )
-        base_url = f"https://{parsed.netloc.rstrip('/')}/api/explore/v2.1"
+        base_url = f"https://{parsed.netloc}/api/explore/v2.1"
         try:
             setup = prepare_dataset_inputs(dataset_id=args.dataset_id, base_url=base_url)
         except DatasetSetupError as e:

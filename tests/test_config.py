@@ -1,9 +1,6 @@
 """Tests for configuration management."""
 
 import os
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from ogd_to_lod.config import (
@@ -137,4 +134,29 @@ azure:
 
         config = load_config(config_file)
 
-        assert config.sparql.endpoint is None
+        assert config.sparql is None
+
+    def test_given_sparql_endpoint(self, monkeypatch, tmp_path):
+        """Test that the SPARQL endpoint is set"""
+        monkeypatch.setenv("TEST_TOKEN", "token")
+        monkeypatch.setenv("TEST_KEY", "key")
+
+        config_content = """
+        github:
+          repo: "org/repo"
+          token: "${TEST_TOKEN}"
+        
+        azure:
+          endpoint: "https://test.openai.azure.com/"
+          api_key: "${TEST_KEY}"
+          deployment: "gpt-4"
+        
+        sparql:
+            endpoint: "http://localhost:3030/test/query"
+        """
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(config_content)
+
+        config = load_config(config_file)
+
+        assert config.sparql.endpoint is not None
