@@ -160,7 +160,8 @@ def load_config(config_path: str | Path) -> Config:
 
     # Validate and construct config objects
     try:
-        github_data = config_data.get("github", {})
+        # `or {}` guards empty/commented YAML sections (parse to None, not {})
+        github_data = config_data.get("github") or {}
         # Support environment variable override for GitHub repo
         github_repo = os.environ.get("GITHUB_REPO", "") or github_data.get("repo", "")
         github = GitHubConfig(
@@ -173,8 +174,8 @@ def load_config(config_path: str | Path) -> Config:
         if not github.token:
             raise ValueError("github.token is required")
 
-        azure_data = config_data.get("azure", {})
-        pricing_data = azure_data.get("pricing", {})
+        azure_data = config_data.get("azure") or {}
+        pricing_data = azure_data.get("pricing") or {}
         azure = AzureOpenAIConfig(
             endpoint=azure_data.get("endpoint", ""),
             api_key=azure_data.get("api_key", ""),
@@ -200,7 +201,7 @@ def load_config(config_path: str | Path) -> Config:
         else:
             sparql = None
 
-        rml_data = config_data.get("rml", {})
+        rml_data = config_data.get("rml") or {}
         # Support environment variable for RMLMapper JAR path
         rmlmapper_jar = rml_data.get("rmlmapper_jar") or os.environ.get("RMLMAPPER_JAR")
         rml = RMLConfig(
@@ -216,7 +217,7 @@ def load_config(config_path: str | Path) -> Config:
         )
 
         # Logging config - can also be set via LOG_LEVEL environment variable
-        logging_data = config_data.get("logging", {})
+        logging_data = config_data.get("logging") or {}
         log_level = logging_data.get("level", os.environ.get("LOG_LEVEL", "INFO"))
         logging_config = LoggingConfig(level=log_level)
 

@@ -1,4 +1,4 @@
-"""Dataset bootstrap utilities for Huwise/OpenDataSoft sources."""
+"""Dataset bootstrap (download) for Huwise/OpenDataSoft sources."""
 
 from __future__ import annotations
 
@@ -26,6 +26,25 @@ class DatasetSetupResult:
     csv_path: str
     context_paths: list[str]
     setup_dir: str
+
+
+def resolve_base_url(domain: str) -> str:
+    """Derive the OpenDataSoft Explore API base URL from a Huwise domain.
+
+    Strips an optional scheme and surrounding slashes, then appends the
+    fixed Explore v2.1 API path. Raises DatasetSetupError on an empty domain.
+    """
+    normalized = (domain or "").strip()
+    if not normalized:
+        raise DatasetSetupError("HUWISE_DOMAIN is empty")
+    if normalized.startswith("https://"):
+        normalized = normalized[len("https://"):]
+    elif normalized.startswith("http://"):
+        normalized = normalized[len("http://"):]
+    normalized = normalized.strip("/")
+    if not normalized:
+        raise DatasetSetupError("HUWISE_DOMAIN (normalized) is empty")
+    return f"https://{normalized}/api/explore/v2.1"
 
 
 def prepare_dataset_inputs(dataset_id: str, base_url: str) -> DatasetSetupResult:
