@@ -6,9 +6,13 @@ import sys
 from ogd_to_lod.config import load_config
 from ogd_to_lod.logging import get_logger
 from ogd_to_lod.runner import run_mapping_session
+from urllib.parse import urlparse
+from pathlib import Path
 
 logger = get_logger(__name__)
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_CONFIG = PROJECT_ROOT / "config" / "config.yaml"
 
 def main() -> int:
     """Main entry point for the CLI."""
@@ -19,7 +23,7 @@ def main() -> int:
     parser.add_argument(
         "--config",
         "-c",
-        default="config/config.yaml",
+        default=str(DEFAULT_CONFIG),
         help="Path to configuration file (default: config/config.yaml)",
     )
     parser.add_argument(
@@ -90,6 +94,37 @@ def main() -> int:
 
     csv_path = args.csv_path
     context_paths = args.context_paths or []
+    output_folder = args.output_folder
+
+    if args.dataset_id:
+        output_folder = output_folder or args.dataset_id
+        huwise_domain = os.environ.get("HUWISE_DOMAIN", "").strip()
+        if not huwise_domain:
+            print(
+                "Error: HUWISE_DOMAIN must be set when using --dataset-id",
+                file=sys.stderr,
+            )
+            return 1
+        parsed = urlparse(
+            huwise_domain if "://" in huwise_domain else f"https://{huwise_domain}"
+        )
+        base_url = f"https://{parsed.netloc}/api/explore/v2.1"
+        try:
+            setup = prepare_dataset_inputs(dataset_id=args.dataset_id, base_url=base_url)
+        except DatasetSetupError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        csv_path = setup.csv_path
+        context_paths = setup.context_paths
+        print(f"\nDataset id: {args.dataset_id}")
+        print(f"Setup directory: {setup.setup_dir}")
+    else:
+        if not output_folder:
+            print(
+                "Error: --output-folder is required when csv_path is provided",
+                file=sys.stderr,
+            )
+            return 1
 
     print(f"\nCSV file: {csv_path}")
     for cp in context_paths:
