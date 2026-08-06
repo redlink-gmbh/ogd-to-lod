@@ -150,14 +150,14 @@ def analyze_node(state: GraphState, config: Config, ai_service: Any | None = Non
     # Build summary
     state.parsed_summary = _build_summary(state.csv_schema, state.dataset_context)
 
-    # Transition to LOOKUP
-    state.current_state = FlowState.LOOKUP
-    logger.info("Transitioning to LOOKUP state")
+    # Transition to PROPOSE
+    state.current_state = FlowState.PROPOSE
+    logger.info("Transitioning to PROPOSE state")
 
     return state
 
 
-def lookup_node(state: GraphState, config: Config) -> GraphState:
+def lookup_node(state: GraphState, config: Config, ai_service: AIService) -> GraphState:
     """Look up existing cube.link properties and DefinedTerms via SPARQL.
 
     When no SPARQL endpoint is configured, silently skips to PROPOSE.
@@ -178,33 +178,38 @@ def lookup_node(state: GraphState, config: Config) -> GraphState:
     if not endpoint:
         logger.info("No SPARQL endpoint configured — skipping vocabulary lookup")
         state.reuse_context = ReuseContext()
-        state.current_state = FlowState.PROPOSE
+        state.current_state = FlowState.GENERATE
         return state
 
     if not state.csv_schema:
         logger.warning("No CSV schema available for SPARQL lookup — skipping")
         state.reuse_context = ReuseContext()
-        state.current_state = FlowState.PROPOSE
+        state.current_state = FlowState.GENERATE
         return state
+
+    if not state.mapping_proposal or not state.mapping_proposal.dimensions:
+        logger.info("No key dimensions in the approved proposal — skipping vocabulary lookup")
+        state.reuse_context = ReuseContext()
+        state.current_state = FlowState.GENERATE
+        return state
+
 
     logger.info("Querying SPARQL endpoint: %s", endpoint)
     lookup = SPARQLLookup(endpoint)
 
-    proposal_dict = state.mapping_proposal.to_dict() if state.mapping_proposal else None
-    context = lookup.build_reuse_context(state.csv_schema, proposal_dict)
+    context = lookup.build_reuse_context(state.csv_schema,  mapping_proposal=state.mapping_proposal.to_dict())#, ai_service)
     state.reuse_context = context
 
     if not context.has_matches():
-        logger.info("No reusable vocabulary found — proceeding to PROPOSE")
-        state.current_state = FlowState.PROPOSE
+        logger.info("No reusable vocabulary found — proceeding to GENERATE")
+        state.current_state = FlowState.GENERATE
         return state
 
     # Present matches to user for confirmation
     display = context.to_display_text()
     msg = (
         f"Found existing vocabulary resources in the SPARQL endpoint:\n\n{display}\n\n"
-        "Reuse these existing URIs in the mapping? "
-        "(yes = reuse them, no = generate fresh URIs)"
+        "Reuse existing terms? (yes / no / comma-separated columns to exclude):"
     )
     state.add_message("assistant", msg)
     state.current_state = FlowState.LOOKUP

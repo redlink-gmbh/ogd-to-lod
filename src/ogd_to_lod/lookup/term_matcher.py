@@ -1,4 +1,4 @@
-from .reuse_context import ColumnReuse
+from .reuse_context import ColumnReuse, MatchedProperty
 from ogd_to_lod.logging import get_logger
 from ogd_to_lod.config import SPARQLConfig
 from collections import Counter, defaultdict
@@ -13,29 +13,22 @@ class TermMatcher:
         self.config = config
         self.endpoint = endpoint
 
-    # Todo: should always be mapping proposal
     def _get_categorical_columns(
             self,
             csv_schema: dict,
             mapping_proposal: dict | None,
     ) -> set[str]:
         """Return the set of column names that are categorical dimensions.
-
-        If a mapping proposal is available, only columns declared as categorical
-        dimensions are returned. Otherwise falls back to string-typed columns.
         """
         if mapping_proposal:
             return {
                 d["column"]
                 for d in mapping_proposal.get("dimensions", [])
-                if d.get("type") == "categorical"
+                #if d.get("type") == "categorical" does it need to be categorical?
             }
-        # Fallback: treat string-typed columns as potentially categorical
-        return {
-            col["name"]
-            for col in csv_schema.get("columns", [])
-            if col.get("type") in ("string", "categorical")
-        }
+        else:
+            return []
+
 
     def _candidate_term_sets(self, column: str, sample: list[str]) -> list[str]:
         """
@@ -187,3 +180,7 @@ class TermMatcher:
                 results.append(max(qualifying, key=lambda r: r.coverage))
 
         return results
+
+    def match_properties(self, reused_col: list[ColumnReuse]) -> list[MatchedProperty]:
+        return []
+

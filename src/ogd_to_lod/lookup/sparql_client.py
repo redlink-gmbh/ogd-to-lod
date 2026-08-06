@@ -7,13 +7,8 @@ from ogd_to_lod.config import SPARQLConfig
 
 logger = get_logger(__name__)
 
-#ToDo: change comments
 class SPARQLLookup:
     """Queries a SPARQL endpoint for existing cube.link properties and DefinedTerms.
-
-    Both query types are scoped to resources already present in cube.link-based
-    data cubes (cube:Observation subjects), so unrelated RDF data in the same
-    endpoint is ignored.
     """
 
     def __init__(self, endpoint: str):
@@ -44,14 +39,14 @@ class SPARQLLookup:
         sparql_config = SPARQLConfig()
         term_match = TermMatcher(sparql_config, self._endpoint)
 
-        # try:
-        #     context.properties = self._lookup_properties(csv_schema, mapping_proposal)
-        # except Exception as e:
-        #     logger.warning("Property SPARQL lookup failed: %s", e)
-
         try:
             context.defined_term_sets = term_match.match_terms(csv_schema, mapping_proposal)
         except Exception as e:
             logger.warning("DefinedTermSet SPARQL lookup failed: %s", e)
+
+        try:
+            context.properties = term_match.match_properties(context.defined_term_sets)
+        except Exception as e:
+            logger.warning("Property SPARQL lookup failed: %s", e)
 
         return context

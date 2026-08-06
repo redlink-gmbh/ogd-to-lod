@@ -60,8 +60,6 @@ class MappingFlow:
         # Add nodes
         graph.add_node("init", self._wrap_init)
         graph.add_node("analyze", self._wrap_analyze)
-        graph.add_node("lookup", self._wrap_lookup)
-        graph.add_node("wait_for_lookup", self._wait_for_lookup)
         graph.add_node("propose", self._wrap_propose)
         graph.add_node("wait_for_input", self._wait_for_input)
         graph.add_node("process_input", self._wrap_process_input)
@@ -93,17 +91,7 @@ class MappingFlow:
             "analyze",
             self._route_from_analyze,
             {
-                "lookup": "lookup",
-                "error": "error",
-            },
-        )
-
-        graph.add_conditional_edges(
-            "lookup",
-            self._route_from_lookup,
-            {
                 "propose": "propose",
-                "wait_for_lookup": "wait_for_lookup",
                 "error": "error",
             },
         )
@@ -185,16 +173,6 @@ class MappingFlow:
     def _wrap_analyze(self, state_dict: dict[str, Any]) -> dict[str, Any]:
         """Wrapper for analyze node."""
         self._state = analyze_node(self._state, self._config, self._ai_service)
-        return self._state.to_dict()
-
-    def _wrap_lookup(self, state_dict: dict[str, Any]) -> dict[str, Any]:
-        """Wrapper for lookup node."""
-        self._state = lookup_node(self._state, self._config)
-        return self._state.to_dict()
-
-    def _wait_for_lookup(self, state_dict: dict[str, Any]) -> dict[str, Any]:
-        """Node that waits for user confirmation of vocabulary reuse."""
-        self._state.awaiting_user_input = True
         return self._state.to_dict()
 
     def _wrap_propose(self, state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -304,14 +282,6 @@ class MappingFlow:
         """Route from ANALYZE state."""
         if self._state.current_state == FlowState.ERROR:
             return "error"
-        return "lookup"
-
-    def _route_from_lookup(self, state_dict: dict[str, Any]) -> str:
-        """Route from LOOKUP state."""
-        if self._state.current_state == FlowState.ERROR:
-            return "error"
-        if self._state.awaiting_user_input:
-            return "wait_for_lookup"
         return "propose"
 
     def _route_from_process_input(self, state_dict: dict[str, Any]) -> str:
@@ -445,37 +415,59 @@ class MappingFlow:
 
         # Handle state transitions based on user intent
         if self._state.current_state == FlowState.GENERATE:
-            # User approved - generate RML
-            logger.info("User approved mapping, generating RML")
-            self._state = generate_node(self._state, self._ai_service)
+            # User approved the proposal. Run vocabulary lookup now that real
+            # key dimensions are available (D1) before generating RML.
+            logger.info("User approved mapping, running vocabulary lookup")
+            self._state = lookup_node(self._state, self._config, self._ai_service)
+
+            if self._state.awaiting_user_input:
+                # Matches found — wait for the per-column reuse confirmation.
+                return self._state
 
             if self._state.current_state != FlowState.ERROR:
-                # Run Tier 1 (syntax) with auto-retry, then Tier 2 (RMLMapper)
-                self._run_tier1_with_retries()
-
-                # If Tier 1 passed, run Tier 2 (RMLMapper)
-                if self._state.current_state == FlowState.VALIDATE:
-                    logger.info("Tier 1 passed, running Tier 2 (RMLMapper)")
-                    self._state = validate_node(
-                        self._state,
-                        rmlmapper_jar=self._config.rml.rmlmapper_jar,
-                        use_docker=self._config.rml.rmlmapper_use_docker,
-                        yarrrml_parser_docker_image=self._config.rml.yarrrml_parser_docker_image,
-                    )
-
-                # If all validation passed, move to CONFIRM_NAME
-                if self._state.current_state == FlowState.PREVIEW:
-                    self._state = confirm_name_node(self._state)
-
-                # If Tier 2 failed, escalate to user via REFINE → PROPOSE
-                elif self._state.current_state == FlowState.REFINE:
-                    logger.info("Validation failed, refining mapping")
-                    self._state = propose_node(self._state, self._ai_service)
+                self._state = self._run_generate_and_validate()
 
         elif self._state.current_state == FlowState.REFINE:
             # User wants changes - loop back to propose
             self._state.current_state = FlowState.PROPOSE
             self._state = propose_node(self._state, self._ai_service)
+
+        return self._state
+
+    def _run_generate_and_validate(self) -> GraphState:
+        """Run GENERATE, Tier 1 (syntax, with retries), and Tier 2 (RMLMapper).
+
+        On success, transitions to CONFIRM_NAME. On Tier 2 failure, escalates
+        to the user via REFINE → PROPOSE. Mutates and returns self._state.
+
+        Called both when the user approves the mapping proposal directly (no
+        vocabulary lookup needed) and when they resolve the per-column
+        vocabulary reuse gate after a LOOKUP round-trip.
+        """
+        self._state = generate_node(self._state, self._ai_service)
+
+        if self._state.current_state != FlowState.ERROR:
+            # Run Tier 1 (syntax) with auto-retry, then Tier 2 (RMLMapper)
+            self._run_tier1_with_retries()
+
+            # If Tier 1 passed, run Tier 2 (RMLMapper)
+            if self._state.current_state == FlowState.VALIDATE:
+                logger.info("Tier 1 passed, running Tier 2 (RMLMapper)")
+                self._state = validate_node(
+                    self._state,
+                    rmlmapper_jar=self._config.rml.rmlmapper_jar,
+                    use_docker=self._config.rml.rmlmapper_use_docker,
+                    yarrrml_parser_docker_image=self._config.rml.yarrrml_parser_docker_image,
+                )
+
+            # If all validation passed, move to CONFIRM_NAME
+            if self._state.current_state == FlowState.PREVIEW:
+                self._state = confirm_name_node(self._state)
+
+            # If Tier 2 failed, escalate to user via REFINE → PROPOSE
+            elif self._state.current_state == FlowState.REFINE:
+                logger.info("Validation failed, refining mapping")
+                self._state = propose_node(self._state, self._ai_service)
 
         return self._state
 
@@ -533,11 +525,19 @@ class MappingFlow:
             self._state.mapping_proposal.status = "refining"
 
     def _handle_lookup_confirmation(self, user_input: str) -> GraphState:
-        """Handle user yes/no confirmation of vocabulary reuse from SPARQL.
+        """Handle the per-column vocabulary reuse gate (D4).
 
-        'yes' / 'y' — keep the ReuseContext and proceed to PROPOSE.
-        'no' / 'n' / 'skip' — clear the ReuseContext (use fresh URIs) and proceed.
-        Anything else — prompt again.
+        - 'yes' / 'y' / 'ja' / 'ok' / 'all' — keep the full ReuseContext.
+        - 'no' / 'n' / 'nein' / 'skip' / 'none' — replace with an empty
+          ReuseContext (fresh URIs everywhere).
+        - Comma-separated column names, or 1-based indices into
+          `state.reuse_context.columns`, are excluded via
+          `ReuseContext.drop_columns(...)`; everything else is kept.
+        - Anything else — re-prompt.
+
+        On resolution, proceeds straight to generation and validation. This
+        no longer calls propose_node — the proposal was already approved
+        before LOOKUP ran (D1).
 
         Args:
             user_input: User's response.
@@ -548,34 +548,83 @@ class MappingFlow:
         self._state.add_message("user", user_input)
         answer = user_input.lower().strip()
 
-        if answer in ("yes", "y", "ja", "ok", "sure", "reuse"):
-            logger.info("User accepted vocabulary reuse from SPARQL")
+        if answer in ("yes", "y", "ja", "ok", "all"):
+            logger.info("User accepted all vocabulary reuse matches")
             self._state.add_message(
                 "assistant",
                 "Great, I will reuse the existing vocabulary URIs in the mapping.",
             )
-            self._state.awaiting_user_input = False
-            self._state.current_state = FlowState.PROPOSE
-            self._state = propose_node(self._state, self._ai_service)
-        elif answer in ("no", "n", "nein", "skip", "fresh", "new"):
-            logger.info("User rejected vocabulary reuse — clearing reuse context")
+            self._state.current_state = FlowState.GENERATE
+            self._state = self._run_generate_and_validate()
+            return self._state
+
+        if answer in ("no", "n", "nein", "skip", "none"):
+            logger.info("User rejected all vocabulary reuse matches")
             from ogd_to_lod.lookup import ReuseContext
             self._state.reuse_context = ReuseContext()
             self._state.add_message(
                 "assistant",
                 "Understood, I will generate fresh URIs for all properties and code values.",
             )
-            self._state.awaiting_user_input = False
-            self._state.current_state = FlowState.PROPOSE
-            self._state = propose_node(self._state, self._ai_service)
-        else:
-            self._state.awaiting_user_input = True
+            self._state.current_state = FlowState.GENERATE
+            self._state = self._run_generate_and_validate()
+            return self._state
+
+        excluded = self._parse_excluded_columns(user_input)
+        if excluded is not None:
+            logger.info("User excluded columns from vocabulary reuse: %s", excluded)
+            self._state.reuse_context = self._state.reuse_context.drop_columns(excluded)
             self._state.add_message(
                 "assistant",
-                "Please answer with 'yes' to reuse the existing URIs or 'no' to generate fresh ones.",
+                f"Excluding {', '.join(excluded)} from vocabulary reuse; "
+                "reusing the rest.",
             )
+            self._state.current_state = FlowState.GENERATE
+            self._state = self._run_generate_and_validate()
+            return self._state
 
+        self._state.awaiting_user_input = True
+        self._state.current_state = FlowState.LOOKUP
+        self._state.add_message(
+            "assistant",
+            "Please answer 'yes' to reuse everything found, 'no' to generate "
+            "fresh URIs everywhere, or list the columns to exclude "
+            "(comma-separated names or numbers).",
+        )
         return self._state
+
+    def _parse_excluded_columns(self, user_input: str) -> list[str] | None:
+        """Parse a comma-separated list of column names or 1-based indices.
+
+        Indices are resolved against `state.reuse_context.columns` (the
+        order presented to the user). Returns None if the input doesn't look
+        like a column selection at all (so the caller can re-prompt), or a
+        (possibly empty after filtering unknown names) list of column names
+        otherwise.
+        """
+        if not self._state.reuse_context or not self._state.reuse_context.columns:
+            return None
+
+        tokens = [t.strip() for t in user_input.split(",") if t.strip()]
+        if not tokens:
+            return None
+
+        known_columns = [c.column for c in self._state.reuse_context.columns]
+        resolved: list[str] = []
+
+        for token in tokens:
+            if token.isdigit():
+                idx = int(token) - 1
+                if 0 <= idx < len(known_columns):
+                    resolved.append(known_columns[idx])
+                else:
+                    return None
+            elif token in known_columns:
+                resolved.append(token)
+            else:
+                return None
+
+        return resolved
 
     def _handle_name_confirmation(self, user_input: str) -> GraphState:
         """Handle user confirmation of the mapping name.
