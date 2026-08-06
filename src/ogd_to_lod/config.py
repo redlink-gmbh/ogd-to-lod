@@ -37,7 +37,12 @@ class AzureOpenAIConfig:
 class SPARQLConfig:
     """SPARQL endpoint configuration."""
 
-    endpoint: str | None = None
+    endpoint: str | None = None                      # seconds per query
+    sample_size: int = 8                    # distinct values per column
+    sample_threshold: float = 0.5      # min sample fraction for a term set to be a candidate
+    max_candidate_term_sets: int = 3
+    min_row_coverage: float = 0.9
+    normalize_values: bool = True
 
 
 @dataclass

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ogd_to_lod.lookup import ReuseContext, SPARQLLookup
-from ogd_to_lod.lookup.reuse_context import MatchedDefinedTermSet, MatchedProperty
+from ogd_to_lod.lookup.reuse_context import ColumnReuse, MatchedProperty
 from ogd_to_lod.lookup.sparql_client import MIN_COVERAGE
 
 
@@ -56,7 +56,7 @@ class TestReuseContext:
     def test_with_defined_term_set_has_matches(self):
         ctx = ReuseContext(
             defined_term_sets=[
-                MatchedDefinedTermSet(
+                ColumnReuse(
                     term_set_uri="https://example.org/code/quartier/",
                     uri_template="https://example.org/code/$(QUARTIER)~iri",
                     matched_column="QUARTIER",
@@ -87,7 +87,7 @@ class TestReuseContext:
     def test_to_prompt_text_with_defined_term_set(self):
         ctx = ReuseContext(
             defined_term_sets=[
-                MatchedDefinedTermSet(
+                ColumnReuse(
                     term_set_uri="https://example.org/code/quartier/",
                     uri_template="https://example.org/code/$(QUARTIER)~iri",
                     matched_column="QUARTIER",
@@ -104,7 +104,7 @@ class TestReuseContext:
     def test_to_prompt_text_instructs_no_separate_mapping(self):
         ctx = ReuseContext(
             defined_term_sets=[
-                MatchedDefinedTermSet(
+                ColumnReuse(
                     term_set_uri="https://example.org/ts",
                     uri_template="https://example.org/code/$(COL)~iri",
                     matched_column="COL",

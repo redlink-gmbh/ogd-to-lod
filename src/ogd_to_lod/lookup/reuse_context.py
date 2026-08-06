@@ -13,16 +13,20 @@ class MatchedProperty:
 
 
 @dataclass
-class MatchedDefinedTermSet:
-    """An existing schema:DefinedTermSet found in the SPARQL endpoint."""
-
+class ColumnReuse:
+    column: str
     term_set_uri: str
-    uri_template: str  # e.g. "https://ld.stadt-zuerich.ch/statistics/code/$(col)~iri"
-    matched_column: str
-    coverage: float  # fraction of CSV sample values found (0.0–1.0)
-    sample_matches: list[str] = field(default_factory=list)  # matched values from CSV sample
+    coverage: float              # matched rows / total rows — exact
+    distinct_coverage: float     # matched distinct values / distinct values
+    uri_template: str | None           # verified YARRRML template; None if unrepresentable
+    template_verified: bool = False
+    value_to_term: dict[str, str] = field(default_factory=dict)
+    unmatched_values: list[str] = field(default_factory=list)
+    normalized_matches: int = 0  # values that matched only after normalization
+    truncated: bool = False      # distinct-value cap hit → coverage is a lower bound
+    property: MatchedProperty | None = None
 
-
+#Todo: Change the prompts
 @dataclass
 class ReuseContext:
     """Vocabulary reuse context built from SPARQL lookups.
@@ -32,7 +36,7 @@ class ReuseContext:
     """
 
     properties: list[MatchedProperty] = field(default_factory=list)
-    defined_term_sets: list[MatchedDefinedTermSet] = field(default_factory=list)
+    defined_term_sets: list[ColumnReuse] = field(default_factory=list)
 
     def has_matches(self) -> bool:
         """Return True if any reusable resources were found."""
