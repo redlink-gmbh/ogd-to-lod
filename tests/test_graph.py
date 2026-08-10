@@ -247,7 +247,7 @@ class TestAnalyzeNode:
 
         result = analyze_node(state, mock_config)
 
-        assert result.current_state == FlowState.LOOKUP
+        assert result.current_state == FlowState.PROPOSE
         assert result.csv_schema is not None
         assert len(result.csv_schema["columns"]) == 2
         assert result.parsed_summary is not None
