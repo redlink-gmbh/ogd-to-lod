@@ -167,6 +167,7 @@ def lookup_node(state: GraphState, config: Config, ai_service: AIService) -> Gra
     Args:
         state: Current graph state with parsed CSV schema.
         config: Application configuration (SPARQL endpoint URL).
+        ai_service: AI service for the isolated template/property subagent calls.
 
     Returns:
         Updated state.
@@ -193,11 +194,14 @@ def lookup_node(state: GraphState, config: Config, ai_service: AIService) -> Gra
         state.current_state = FlowState.GENERATE
         return state
 
-
     logger.info("Querying SPARQL endpoint: %s", endpoint)
     lookup = SPARQLLookup(endpoint)
 
-    context = lookup.build_reuse_context(state.csv_schema,  mapping_proposal=state.mapping_proposal.to_dict())#, ai_service)
+    context = lookup.build_reuse_context(
+        state.csv_schema,
+        ai_service,
+        mapping_proposal=state.mapping_proposal.to_dict(),
+    )
     state.reuse_context = context
 
     if not context.has_matches():
@@ -217,7 +221,7 @@ def lookup_node(state: GraphState, config: Config, ai_service: AIService) -> Gra
     logger.info(
         "Found %d property and %d DefinedTermSet matches — awaiting user confirmation",
         len(context.properties),
-        len(context.defined_term_sets),
+        len(context.columns),
     )
 
     return state

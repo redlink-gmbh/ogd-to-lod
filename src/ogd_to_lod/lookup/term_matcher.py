@@ -1,4 +1,4 @@
-from .reuse_context import ColumnReuse, MatchedProperty
+from .models import ColumnReuse, MatchedProperty
 from ogd_to_lod.logging import get_logger
 from ogd_to_lod.config import SPARQLConfig
 from collections import Counter, defaultdict
@@ -24,7 +24,7 @@ class TermMatcher:
             return {
                 d["column"]
                 for d in mapping_proposal.get("dimensions", [])
-                #if d.get("type") == "categorical" does it need to be categorical?
+                    if d.get("type") == "categorical" #does it need to be categorical?
             }
         else:
             return []
@@ -33,7 +33,7 @@ class TermMatcher:
     def _candidate_term_sets(self, column: str, sample: list[str]) -> list[str]:
         """
         Returns the URIs of term sets covering `>= sample_threshold` of the
-        sample, ordered by coverage descending (ties alphabetical), capped
+        sample, ordered by coverage descending, capped
         at `max_candidate_term_sets`.
         """
 

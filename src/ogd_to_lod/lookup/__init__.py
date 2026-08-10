@@ -1,6 +1,6 @@
 """SPARQL-based vocabulary reuse lookup."""
 
-from .reuse_context import ColumnReuse, MatchedProperty, ReuseContext
+from .models import ColumnReuse, MatchedProperty, ReuseContext
 from .sparql_client import SPARQLLookup
 from .queries import SPARQLLookupError
 
