@@ -201,6 +201,7 @@ def lookup_node(state: GraphState, config: Config, ai_service: AIService) -> Gra
         state.csv_schema,
         ai_service,
         mapping_proposal=state.mapping_proposal.to_dict(),
+        dataset_context=state.dataset_context
     )
     state.reuse_context = context
 

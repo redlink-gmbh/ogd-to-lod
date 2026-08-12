@@ -8,6 +8,8 @@ from ogd_to_lod.logging import get_logger
 from ogd_to_lod.lookup.models import ReuseContext
 from ogd_to_lod.lookup.template import propose_and_verify_templates
 from ogd_to_lod.lookup.term_matcher import TermMatcher
+from ogd_to_lod.lookup.property_matcher import PropertyMatcher
+from typing import Any
 
 logger = get_logger(__name__)
 
@@ -27,6 +29,7 @@ class SPARQLLookup:
             csv_schema: dict,
             ai_service: AIService,
             mapping_proposal: dict | None = None,
+            dataset_context: dict[str, Any] | None = None
     ) -> ReuseContext:
         """Run term matching, template verification, and property matching.
 
@@ -43,12 +46,18 @@ class SPARQLLookup:
         context = ReuseContext()
         sparql_config = SPARQLConfig()
         term_match = TermMatcher(sparql_config, self._endpoint)
+        property_matcher = PropertyMatcher()
 
         try:
             context.columns = term_match.match_terms(csv_schema, mapping_proposal)
         except Exception as e:
             logger.warning("DefinedTermSet SPARQL lookup failed: %s", e)
             return context
+
+        try:
+            context.properties = property_matcher.match_properties(context.columns, ai_service, self._endpoint, dataset_context)
+        except Exception as e:
+            logger.warning("Property SPARQL lookup failed: %s", e)
 
         if context.columns:
             try:
@@ -59,11 +68,5 @@ class SPARQLLookup:
                 propose_and_verify_templates(ai_service, context.columns, sample_rows_by_column)
             except Exception as e:
                 logger.warning("Template proposal/verification failed: %s", e)
-
-        # TODO: property matching
-        # try:
-        #     context.properties = term_match.match_properties(context.columns)
-        # except Exception as e:
-        #     logger.warning("Property SPARQL lookup failed: %s", e)
 
         return context
