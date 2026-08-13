@@ -3,7 +3,7 @@ from collections import Counter
 from unittest.mock import MagicMock, patch
 
 import pytest
-
+from ogd_to_lod.lookup.property_matcher import PropertyMatcher
 from ogd_to_lod.config import SPARQLConfig
 from ogd_to_lod.lookup import ReuseContext
 from ogd_to_lod.lookup.models import ColumnReuse, MatchedProperty
@@ -144,49 +144,157 @@ class TestReuseContext:
 # SPARQLLookup — property lookup
 # ---------------------------------------------------------------------------
 
-# PROPERTY_ROWS = [
-#     {"property": "https://example.org/property/ZEIT", "label": "JAHR"},
-#     {"property": "https://example.org/property/RAUM", "label": "quartier"},
-#     {"property": "https://example.org/property/unrelated", "label": "something_else"},
-# ]
-#
-#
-# class TestSPARQLLookupProperties:
-#     def _make_lookup(self, rows):
-#         lookup = SPARQLLookup("https://sparql.example.org/query")
-#         lookup._sparql_query = MagicMock(return_value=rows)
-#         return lookup
-#
-#     def test_exact_label_match(self):
-#         lookup = self._make_lookup(PROPERTY_ROWS)
-#         context = lookup.build_reuse_context(SAMPLE_CSV_SCHEMA)
-#         # "JAHR" matches label "JAHR" (case-insensitive)
-#         prop_cols = {p.matched_column for p in context.properties}
-#         assert "JAHR" in prop_cols
-#
-#     def test_matched_uri_is_correct(self):
-#         lookup = self._make_lookup(PROPERTY_ROWS)
-#         context = lookup.build_reuse_context(SAMPLE_CSV_SCHEMA)
-#         jahr_match = next(p for p in context.properties if p.matched_column == "JAHR")
-#         assert jahr_match.existing_uri == "https://example.org/property/ZEIT"
-#
-#     def test_no_match_for_unrelated_column(self):
-#         lookup = self._make_lookup(PROPERTY_ROWS)
-#         context = lookup.build_reuse_context(SAMPLE_CSV_SCHEMA)
-#         matched_cols = {p.matched_column for p in context.properties}
-#         assert "ANZAHL" not in matched_cols
-#
-#     def test_empty_endpoint_result_returns_empty(self):
-#         lookup = self._make_lookup([])
-#         context = lookup.build_reuse_context(SAMPLE_CSV_SCHEMA)
-#         assert context.properties == []
-#
-#     def test_sparql_error_is_logged_not_raised(self):
-#         lookup = SPARQLLookup("https://sparql.example.org/query")
-#         lookup._sparql_query = MagicMock(side_effect=Exception("connection refused"))
-#         # Should not raise — returns empty context
-#         context = lookup.build_reuse_context(SAMPLE_CSV_SCHEMA)
-#         assert context.properties == []
+def _column_reuse(column: str, value_to_term: dict[str, str]) -> ColumnReuse:
+    return ColumnReuse(
+        column=column,
+        term_set_uri="https://example.org/ts/dummy",
+        coverage=1.0,
+        distinct_coverage=1.0,
+        uri_template=None,
+        template_verified=False,
+        value_to_term=value_to_term,
+        unmatched_values=[],
+        normalized_matches=0,
+        truncated=False,
+        property=None,
+    )
+
+class TestPropertyMatcher:
+    def _make_ai_service(self, yaml_blocks):
+        ai_service = MagicMock()
+        ai_service.ask_once.return_value = "irrelevant raw reply"
+        return ai_service, yaml_blocks
+
+    @patch("ogd_to_lod.lookup.property_matcher.AIService.parse_response")
+    @patch("ogd_to_lod.lookup.property_matcher.sparql_query")
+    def test_confirmed_match_is_selected(self, mock_sparql_query, mock_parse_response):
+        column = _column_reuse("JAHR", {"2020": "https://example.org/code/2020"})
+        mock_sparql_query.return_value = [
+            {"property": "https://example.org/property/ZEIT", "label": "Zeit", "usageCount": "5"},
+        ]
+        mock_parse_response.return_value.get_yaml_blocks.return_value = [
+            """
+            matches:
+              - column: JAHR
+                property: https://example.org/property/ZEIT
+                match: true
+            """
+        ]
+        ai_service = MagicMock(ask_once=MagicMock(return_value="reply"))
+
+        matcher = PropertyMatcher()
+        result = matcher.match_properties([column], ai_service, "https://sparql.example.org/query")
+
+        assert len(result) == 1
+        assert result[0].existing_uri == "https://example.org/property/ZEIT"
+        assert result[0].matched_column == "JAHR"
+        assert result[0].usage_count == 5
+        assert column.property is result[0]  # column mutated in place
+
+    @patch("ogd_to_lod.lookup.property_matcher.AIService.parse_response")
+    @patch("ogd_to_lod.lookup.property_matcher.sparql_query")
+    def test_highest_usage_count_wins_among_confirmed(self, mock_sparql_query, mock_parse_response):
+        column = _column_reuse("JAHR", {"2020": "https://example.org/code/2020"})
+        mock_sparql_query.return_value = [
+            {"property": "https://example.org/property/A", "label": "A", "usageCount": "3"},
+            {"property": "https://example.org/property/B", "label": "B", "usageCount": "9"},
+        ]
+        mock_parse_response.return_value.get_yaml_blocks.return_value = [
+            """
+            matches:
+              - column: JAHR
+                property: https://example.org/property/A
+                match: true
+              - column: JAHR
+                property: https://example.org/property/B
+                match: true
+            """
+        ]
+        ai_service = MagicMock(ask_once=MagicMock(return_value="reply"))
+
+        matcher = PropertyMatcher()
+        result = matcher.match_properties([column], ai_service, "https://sparql.example.org/query")
+
+        assert len(result) == 1
+        assert result[0].existing_uri == "https://example.org/property/B"
+
+    @patch("ogd_to_lod.lookup.property_matcher.AIService.parse_response")
+    @patch("ogd_to_lod.lookup.property_matcher.sparql_query")
+    def test_no_llm_confirmation_means_no_property(self, mock_sparql_query, mock_parse_response):
+        column = _column_reuse("JAHR", {"2020": "https://example.org/code/2020"})
+        mock_sparql_query.return_value = [
+            {"property": "https://example.org/property/ZEIT", "label": "Zeit", "usageCount": "5"},
+        ]
+        mock_parse_response.return_value.get_yaml_blocks.return_value = [
+            """
+            matches:
+              - column: JAHR
+                property: https://example.org/property/ZEIT
+                match: false
+            """
+        ]
+        ai_service = MagicMock(ask_once=MagicMock(return_value="reply"))
+
+        matcher = PropertyMatcher()
+        result = matcher.match_properties([column], ai_service, "https://sparql.example.org/query")
+
+        assert result == []
+        assert column.property is None
+
+    @patch("ogd_to_lod.lookup.property_matcher.AIService.parse_response")
+    @patch("ogd_to_lod.lookup.property_matcher.sparql_query")
+    def test_column_with_no_terms_is_never_queried(self, mock_sparql_query, mock_parse_response):
+
+        measure_column = _column_reuse("ANZAHL", {})
+        mock_parse_response.return_value.get_yaml_blocks.return_value = []
+        ai_service = MagicMock(ask_once=MagicMock(return_value="reply"))
+
+        matcher = PropertyMatcher()
+        result = matcher.match_properties([measure_column], ai_service, "https://sparql.example.org/query")
+
+        mock_sparql_query.assert_not_called()
+        assert result == []
+
+    @patch("ogd_to_lod.lookup.property_matcher.AIService.parse_response")
+    @patch("ogd_to_lod.lookup.property_matcher.sparql_query")
+    def test_single_batched_llm_call_for_multiple_columns(self, mock_sparql_query, mock_parse_response):
+        jahr = _column_reuse("JAHR", {"2020": "https://example.org/code/2020"})
+        quartier = _column_reuse("QUARTIER", {"Kreis 1": "https://example.org/code/kreis1"})
+        mock_sparql_query.return_value = [
+            {"property": "https://example.org/property/X", "label": "X", "usageCount": "1"},
+        ]
+        mock_parse_response.return_value.get_yaml_blocks.return_value = []
+        ai_service = MagicMock(ask_once=MagicMock(return_value="reply"))
+
+        matcher = PropertyMatcher()
+        matcher.match_properties([jahr, quartier], ai_service, "https://sparql.example.org/query")
+
+        ai_service.ask_once.assert_called_once()
+
+    @patch("ogd_to_lod.lookup.property_matcher.AIService.parse_response")
+    @patch("ogd_to_lod.lookup.property_matcher.sparql_query")
+    def test_empty_sparql_result_skips_column(self, mock_sparql_query, mock_parse_response):
+        column = _column_reuse("JAHR", {"2020": "https://example.org/code/2020"})
+        mock_sparql_query.return_value = []
+        mock_parse_response.return_value.get_yaml_blocks.return_value = []
+        ai_service = MagicMock(ask_once=MagicMock(return_value="reply"))
+
+        matcher = PropertyMatcher()
+        result = matcher.match_properties([column], ai_service, "https://sparql.example.org/query")
+
+        assert result == []
+
+    @patch("ogd_to_lod.lookup.property_matcher.AIService.parse_response")
+    @patch("ogd_to_lod.lookup.property_matcher.sparql_query")
+    def test_no_reused_columns_returns_empty_without_llm_call(self, mock_sparql_query, mock_parse_response):
+        ai_service = MagicMock(ask_once=MagicMock(return_value="reply"))
+        matcher = PropertyMatcher()
+
+        result = matcher.match_properties([], ai_service, "https://sparql.example.org/query")
+
+        assert result == []
+        mock_sparql_query.assert_not_called()
+
 
 
 # ---------------------------------------------------------------------------

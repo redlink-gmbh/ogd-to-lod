@@ -1,4 +1,4 @@
-from .models import ColumnReuse, MatchedProperty
+from .models import ColumnReuse
 from ogd_to_lod.logging import get_logger
 from ogd_to_lod.config import SPARQLConfig
 from collections import Counter, defaultdict
@@ -119,7 +119,7 @@ class TermMatcher:
             uri_template=None,
             value_to_term=value_to_term,
             unmatched_values=sorted(unmatched_values),
-            normalized_matches="",
+            normalized_matches=0,
             truncated=truncated,
         )
 
@@ -180,7 +180,4 @@ class TermMatcher:
                 results.append(max(qualifying, key=lambda r: r.coverage))
 
         return results
-
-    def match_properties(self, reused_col: list[ColumnReuse]) -> list[MatchedProperty]:
-        return []
 
