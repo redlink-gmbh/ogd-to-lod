@@ -27,7 +27,6 @@ class ColumnReuse:
     template_verified: bool = False
     value_to_term: dict[str, str] = field(default_factory=dict)
     unmatched_values: list[str] = field(default_factory=list)
-    normalized_matches: int = 0  # values that matched only after normalization
     truncated: bool = False      # distinct-value cap hit → coverage is a lower bound
     property: MatchedProperty | None = None
 
@@ -38,10 +37,6 @@ def build_enriched_table(
         limit: int = 10,
 ) -> list[dict[str, str]]:
     """Attach a `<column>_uri` column to sample rows via known term matches.
-
-    Shared by `lookup/template.py` and
-    `ReuseContext.enriched_table`,
-    so both use exactly the same table a human or the LLM would see.
 
     Args:
         column: Name of the CSV column being enriched.

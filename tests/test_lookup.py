@@ -66,7 +66,6 @@ class TestReuseContext:
                     template_verified=True,
                     value_to_term={"quartier1": "https://example.org/code/quartier/quartier1"},
                     unmatched_values=[],
-                    normalized_matches=0,
                     truncated=False,
                     property=None,
                 )
@@ -104,7 +103,6 @@ class TestReuseContext:
                     template_verified=True,
                     value_to_term={"quartier1": "https://example.org/code/quartier/quartier1"},
                     unmatched_values=[],
-                    normalized_matches=0,
                     truncated=False,
                     property=None,
                 )
@@ -128,7 +126,6 @@ class TestReuseContext:
                     template_verified=True,
                     value_to_term={"quartier1": "https://example.org/code/quartier/quartier1"},
                     unmatched_values=[],
-                    normalized_matches=0,
                     truncated=False,
                     property=None,
                 )
@@ -154,7 +151,6 @@ def _column_reuse(column: str, value_to_term: dict[str, str]) -> ColumnReuse:
         template_verified=False,
         value_to_term=value_to_term,
         unmatched_values=[],
-        normalized_matches=0,
         truncated=False,
         property=None,
     )
@@ -337,7 +333,6 @@ class TestTermMatcherDefinedTermSets:
             sample_threshold=0.5,
             max_candidate_term_sets=3,
             min_row_coverage=0.9,
-            normalize_values=True,
         )
         return TermMatcher(config, "https://sparql.example.org/query")
 

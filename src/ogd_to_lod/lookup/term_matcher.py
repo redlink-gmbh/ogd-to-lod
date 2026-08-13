@@ -15,9 +15,8 @@ class TermMatcher:
 
     def _get_categorical_columns(
             self,
-            csv_schema: dict,
             mapping_proposal: dict | None,
-    ) -> set[str]:
+    ) -> set[str] | None:
         """Return the set of column names that are categorical dimensions.
         """
         if mapping_proposal:
@@ -27,7 +26,7 @@ class TermMatcher:
                     if d.get("type") == "categorical" #does it need to be categorical?
             }
         else:
-            return []
+            return None
 
 
     def _candidate_term_sets(self, column: str, sample: list[str]) -> list[str]:
@@ -119,7 +118,6 @@ class TermMatcher:
             uri_template=None,
             value_to_term=value_to_term,
             unmatched_values=sorted(unmatched_values),
-            normalized_matches=0,
             truncated=truncated,
         )
 
@@ -129,7 +127,7 @@ class TermMatcher:
             mapping_proposal: dict | None,
     ) -> list[ColumnReuse]:
 
-        categorical_cols = self._get_categorical_columns(csv_schema, mapping_proposal)
+        categorical_cols = self._get_categorical_columns(mapping_proposal)
         if not categorical_cols:
             return []
 

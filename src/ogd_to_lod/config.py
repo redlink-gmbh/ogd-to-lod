@@ -42,7 +42,6 @@ class SPARQLConfig:
     sample_threshold: float = 0.5      # min sample fraction for a term set to be a candidate
     max_candidate_term_sets: int = 3
     min_row_coverage: float = 0.9
-    normalize_values: bool = True
 
 
 @dataclass
