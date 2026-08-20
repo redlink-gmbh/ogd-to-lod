@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ogd_to_lod.config import HuwiseConfig
 from ogd_to_lod.lookup import ReuseContext, SPARQLLookup
 from ogd_to_lod.lookup.reuse_context import MatchedDefinedTermSet, MatchedProperty
 from ogd_to_lod.lookup.sparql_client import MIN_COVERAGE
@@ -265,6 +266,7 @@ class TestSPARQLLookupNoEndpoint:
             github=GitHubConfig(repo="org/repo", token="tok"),
             azure=AzureOpenAIConfig(endpoint="https://e", api_key="k", deployment="d"),
             sparql=SPARQLConfig(endpoint=None),
+            huwise=HuwiseConfig(api_key="k"),
         )
         state = GraphState(
             csv_schema=SAMPLE_CSV_SCHEMA,
