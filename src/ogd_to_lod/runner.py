@@ -1,0 +1,328 @@
+"""Shared mapping-session runner used by the core and Huwise CLIs.
+
+Holds the interactive mapping flow (flow construction, token callback, the
+input loop, and the final session summary) so multiple entry points can drive
+the exact same pipeline without duplicating the CLI logic.
+"""
+
+import sys
+from dataclasses import dataclass
+
+from ogd_to_lod.ai import RequestLimitReached, TokenUsage
+from ogd_to_lod.config import Config
+from ogd_to_lod.graph import FlowState, MappingFlow
+from ogd_to_lod.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+@dataclass
+class MappingSessionResult:
+    """Outcome of a mapping session.
+
+    exit_code: process exit code (0 = success).
+    flow: the MappingFlow instance, or None if the flow never started. Exposed
+        so callers (e.g. a Huwise upload step) can read the produced results
+        via flow.get_local_output_path() / flow.get_pr_url().
+    """
+
+    exit_code: int
+    flow: MappingFlow | None
+
+
+def format_token_stats(flow: MappingFlow) -> str:
+    """Format token usage statistics as a string.
+
+    Args:
+        flow: MappingFlow instance with AI service.
+
+    Returns:
+        Formatted token statistics string.
+    """
+    ai = flow.ai_service
+    usage = ai.token_usage
+    cost = ai.get_total_cost()
+
+    lines = []
+    lines.append(f"Requests: {ai.request_count}/{ai.request_limit}")
+    lines.append(
+        f"Tokens: {usage.total_tokens:,} "
+        f"({usage.input_tokens:,} in, {usage.output_tokens:,} out"
+    )
+    if usage.cached_tokens > 0:
+        lines[-1] += f", {usage.cached_tokens:,} cached"
+    lines[-1] += ")"
+    lines.append(f"Cost: CHF {cost:.4f}")
+
+    return " | ".join(lines)
+
+
+def create_token_callback(request_limit: int) -> callable:
+    """Create a callback that prints token stats in real-time.
+
+    Args:
+        request_limit: Maximum request limit for display.
+
+    Returns:
+        Callback function.
+    """
+    def callback(
+        request_count: int,
+        last_tokens: TokenUsage,
+        total_tokens: TokenUsage,
+        total_cost: float,
+    ) -> None:
+        """Print token usage update."""
+        # Format: [Req 5/50 | +1,234 tok | Total: 12,345 | CHF 0.0580]
+        msg = f"  → Req {request_count}/{request_limit}"
+        msg += f" | +{last_tokens.total_tokens:,} tok"
+        msg += f" | Total: {total_tokens.total_tokens:,}"
+        msg += f" | CHF {total_cost:.4f}"
+        print(msg, flush=True)
+
+    return callback
+
+
+def run_mapping_session(
+    config: Config,
+    *,
+    csv_path: str,
+    context_paths: list[str],
+    base_uri: str | None,
+    output_folder: str | None,
+    local_output: bool,
+) -> MappingSessionResult:
+    """Run the interactive mapping flow to completion.
+
+    Shared by the core CLI (local files) and the Huwise CLI (downloaded files).
+    Returns a MappingSessionResult carrying the exit code and the flow instance.
+    """
+    # Start the mapping flow
+    try:
+        flow = MappingFlow(config)
+
+        # Register callback for real-time token updates
+        token_callback = create_token_callback(config.azure.max_requests)
+        flow.ai_service.register_token_callback(token_callback)
+
+        state = flow.start(
+            csv_path=csv_path,
+            context_paths=context_paths,
+            base_uri=base_uri,
+            output_folder=output_folder,
+            local_output=local_output,
+        )
+    except Exception as e:
+        logger.exception("Failed to start mapping flow")
+        print(f"\nError: {e}", file=sys.stderr)
+        return MappingSessionResult(exit_code=1, flow=None)
+
+    # Check for errors
+    if state.current_state == FlowState.ERROR:
+        print(f"\nError: {state.error_message}", file=sys.stderr)
+        return MappingSessionResult(exit_code=1, flow=flow)
+
+    # Show parsed summary
+    if flow.get_parsed_summary():
+        print("\n" + "=" * 60)
+        print(flow.get_parsed_summary())
+
+    # Show proposal
+    if flow.get_proposal_text():
+        print("\n" + "=" * 60)
+        print("AI Proposal:")
+        print(flow.get_proposal_text())
+
+    # Interactive loop
+    while flow.is_awaiting_input() and not flow.is_complete():
+        print("\n" + "-" * 60)
+
+        # Show appropriate prompt based on state
+        if flow.is_awaiting_name_confirmation():
+            name = flow.state.mapping_name or "mapping"
+            prompt = f"Dataset name ['{name}']: "
+        elif flow.is_awaiting_csv_url():
+            prompt = "Public CSV source URL (Enter to skip): "
+        elif flow.is_awaiting_lookup_confirmation():
+            prompt = (
+                "Reuse existing vocabulary? "
+                "(yes / no / comma-separated columns to exclude): "
+            )
+        elif flow.is_awaiting_pr_confirmation():
+            if flow.is_local_output():
+                prompt = "Save results locally? (yes/no): "
+            else:
+                prompt = "Push to GitHub and create PR? (yes/no): "
+        else:
+            prompt = "Your response (or 'quit' to exit): "
+
+        try:
+            user_input = input(prompt).strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nExiting...")
+            return MappingSessionResult(exit_code=0, flow=flow)
+
+        if user_input.lower() in ("quit", "exit", "q") and not flow.is_awaiting_pr_confirmation():
+            print("Exiting...")
+            return MappingSessionResult(exit_code=0, flow=flow)
+
+        # Allow empty input for name confirmation and URL states (Enter = skip)
+        allows_empty = (
+            flow.is_awaiting_name_confirmation()
+            or flow.is_awaiting_csv_url()
+        )
+        if not user_input and not allows_empty:
+            continue
+
+        try:
+            state = flow.continue_with_input(user_input)
+        except RequestLimitReached as e:
+            # AI request limit reached - ask user if they want to continue
+            print(f"\n⚠ Warning: {e}", file=sys.stderr)
+            print(f"\nYou have made {e.current_count} AI requests (limit: {e.limit}).")
+            print("This limit helps prevent runaway costs from too many API calls.")
+
+            response = input("\nContinue with more requests? (yes/no): ").strip().lower()
+            if response in ('yes', 'y'):
+                # Reset counter and retry
+                flow.reset_request_count()
+                print(f"✓ Request counter reset. Continuing...")
+                # Retry the same input
+                try:
+                    state = flow.continue_with_input(user_input)
+                except Exception as retry_error:
+                    logger.exception("Error processing input after reset")
+                    print(f"\nError: {retry_error}", file=sys.stderr)
+                    continue
+            else:
+                print("\nExiting at user request.")
+                return MappingSessionResult(exit_code=0, flow=flow)
+        except Exception as e:
+            logger.exception("Error processing input")
+            print(f"\nError: {e}", file=sys.stderr)
+            continue
+
+        # Show token usage stats
+        print(f"\n[{format_token_stats(flow)}]")
+
+        # Check for errors
+        if state.current_state == FlowState.ERROR:
+            print(f"\nError: {state.error_message}", file=sys.stderr)
+            return MappingSessionResult(exit_code=1, flow=flow)
+
+        # Show vocabulary reuse matches when transitioning to LOOKUP state
+        if flow.is_awaiting_lookup_confirmation():
+            print("\n" + "=" * 60)
+            print("Vocabulary Reuse Found:")
+            print("-" * 60)
+            reuse_context = flow.state.reuse_context
+            if reuse_context:
+                print(reuse_context.to_display_text())
+            print("=" * 60)
+            continue
+
+        # Show PR preview when transitioning to PREVIEW state
+        if flow.is_awaiting_pr_confirmation() and flow.get_pr_description():
+            print("\n" + "=" * 60)
+            print("PR Preview:")
+            print("-" * 60)
+            print(flow.get_pr_description())
+            print("=" * 60)
+            continue
+
+        # Show updated proposal if in refinement
+        if flow.get_proposal_text() and state.current_state == FlowState.PROPOSE:
+            print("\n" + "=" * 60)
+            print("Updated Proposal:")
+            print(flow.get_proposal_text())
+
+        # Show generated RML and validation results
+        if flow.has_generated_rml():
+            print("\n" + "=" * 60)
+            print("Generated RML:")
+            print("-" * 60)
+            print(flow.get_generated_rml())
+
+            # Show validation results
+            if flow.is_validated():
+                print("\n" + "=" * 60)
+                print("Validation: PASSED")
+                if flow.has_rdf_preview():
+                    print("\nRDF Preview (first 2000 chars):")
+                    print("-" * 60)
+                    preview = flow.get_rdf_preview()[:2000]
+                    print(preview)
+                    if len(flow.get_rdf_preview()) > 2000:
+                        print("... (truncated)")
+
+                # Check if awaiting PR confirmation
+                if flow.is_awaiting_pr_confirmation():
+                    continue
+
+                # Check if PR was created
+                if flow.has_created_pr():
+                    print("\n" + "=" * 60)
+                    print("PR created successfully!")
+                    print(f"PR #{flow.get_pr_number()}: {flow.get_pr_url()}")
+                    break
+
+                # Check if local output was written
+                if flow.has_local_output():
+                    print("\n" + "=" * 60)
+                    print("Results saved locally!")
+                    print(f"Folder: {flow.get_local_output_path()}")
+                    break
+
+            elif flow.get_validation_error():
+                print("\n" + "=" * 60)
+                print("Validation: FAILED")
+                print(f"Error: {flow.get_validation_error()}")
+                print("\nRefining mapping...")
+                # Show updated proposal after refinement
+                if flow.get_proposal_text():
+                    print("\n" + "=" * 60)
+                    print("Updated Proposal:")
+                    print(flow.get_proposal_text())
+
+        # Check if approved but not yet generated
+        if flow.is_approved() and not flow.has_generated_rml():
+            print("\nProposal approved! Generating RML...")
+
+        # Check if flow completed (user cancelled PR)
+        if flow.is_complete():
+            if (
+                not flow.has_created_pr()
+                and not flow.has_local_output()
+                and flow.has_generated_rml()
+            ):
+                print("\n" + "=" * 60)
+                if flow.is_local_output():
+                    print("RML mapping generated but local save was skipped.")
+                else:
+                    print("RML mapping generated but PR creation was skipped.")
+                print("You can find the generated RML above.")
+            break
+
+    # Show final token usage summary
+    print("\n" + "=" * 60)
+    print("Session Summary")
+    print("=" * 60)
+    ai = flow.ai_service
+    usage = ai.token_usage
+    cost = ai.get_total_cost()
+
+    print(f"Total Requests: {ai.request_count}")
+    print(f"Total Tokens: {usage.total_tokens:,}")
+    print(f"  - Input: {usage.input_tokens:,}")
+    print(f"  - Output: {usage.output_tokens:,}")
+    if usage.cached_tokens > 0:
+        print(f"  - Cached: {usage.cached_tokens:,}")
+    print(f"\nEstimated Cost: CHF {cost:.4f}")
+    print(f"  (Input: CHF {(usage.input_tokens / 1_000_000) * config.azure.price_per_1m_input_tokens:.4f}, "
+          f"Output: CHF {(usage.output_tokens / 1_000_000) * config.azure.price_per_1m_output_tokens:.4f}")
+    if usage.cached_tokens > 0:
+        print(f"   Cached: CHF {(usage.cached_tokens / 1_000_000) * config.azure.price_per_1m_cached_tokens:.4f})")
+    else:
+        print(")")
+
+    return MappingSessionResult(exit_code=0, flow=flow)

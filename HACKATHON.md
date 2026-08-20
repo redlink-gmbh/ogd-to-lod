@@ -23,7 +23,7 @@ the host — open the folder in your IDE while the commands are running.
   - `AZURE_OPENAI_KEY`
   - `AZURE_OPENAI_DEPLOYMENT`
   - `APP_GITHUB_TOKEN` — any value; only used by the PR path, not by `--local`.
-- For dataset bootstrap mode (`--dataset-id`), also set:
+- For Huwise mode (`ogd-to-lod-huwise --dataset-id ...`), also set:
   - `HUWISE_DOMAIN` (for example `data.bs.ch`)
 - That's it. No local Python install, no Java, no node.
 
@@ -44,11 +44,11 @@ Fuseki is now serving an empty dataset `test` at
 
 ## Step 2 — Generate the mapping with `--local`
 
-Preferred path: run with dataset bootstrap (`--dataset-id`) so CSV and
-metadata are fetched automatically:
+Preferred path: run Huwise mode (`ogd-to-lod-huwise`) so CSV and
+metadata are fetched automatically (requires `HUWISE_DOMAIN`):
 
 ```bash
-docker compose run --rm ogd-to-lod \
+docker compose run --rm --entrypoint ogd-to-lod-huwise ogd-to-lod \
     --dataset-id 100051 \
     --output-folder weather-binningen-hourly \
     --local

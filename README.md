@@ -78,7 +78,7 @@ The application uses a YAML configuration file (`config/config.yaml`) with envir
 |----------|-------------|---------|
 | `GITHUB_REPO` | Target repository for generated mappings | `redlink-gmbh/ogd-to-lod-mappings` |
 | `LOG_LEVEL` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) | `INFO` |
-| `HUWISE_DOMAIN` | Huwise domain used to derive `https://<domain>/api/explore/v2.1` (required only with `--dataset-id`) | unset |
+| `HUWISE_DOMAIN` | Huwise domain used to derive `https://<domain>/api/explore/v2.1` (required only for the `ogd-to-lod-huwise` command) | unset |
 
 ### Configuration File
 
@@ -138,8 +138,8 @@ docker compose run --rm ogd-to-lod \
               example/weather-binningen-hourly/fields.txt \
     --local
 
-# One-shot run with dataset bootstrap (downloads CSV + metadata first):
-docker compose run --rm ogd-to-lod \
+# One-shot run in Huwise mode (downloads CSV + metadata first):
+docker compose run --rm --entrypoint ogd-to-lod-huwise ogd-to-lod \
     --dataset-id 100051 \
     --local
 ```
@@ -150,17 +150,23 @@ Credentials come from `.env` (same variables as the native install).
 
 ```bash
 ogd-to-lod <csv_path> --output-folder <folder> [--context FILE ...]
-# or
-ogd-to-lod --dataset-id <id> [--output-folder <folder>]
+# or, to bootstrap inputs from Huwise first:
+ogd-to-lod-huwise --dataset-id <id> [--output-folder <folder>]
 ```
+
+There are two commands:
+
+- `ogd-to-lod` — the core tool. Maps a local CSV plus optional context files.
+- `ogd-to-lod-huwise` — an optional wrapper that downloads a dataset from Huwise
+  and then runs the exact same mapping flow. See
+  [Huwise mode](#huwise-mode-ogd-to-lod-huwise).
 
 ### Arguments
 
 | Argument | Description |
 |----------|-------------|
-| `csv_path` | Path to the CSV file to map (required for file-path mode) |
-| `--dataset-id ID` | Dataset identifier for bootstrap mode. The CLI downloads CSV + metadata from Huwise before running the normal workflow. |
-| `--output-folder FOLDER` | Target subfolder name in the mappings directory. Required for file-path mode; defaults to `--dataset-id` in dataset mode. |
+| `csv_path` | Path to the CSV file to map (required) |
+| `--output-folder FOLDER` | Target subfolder name in the mappings directory. Required. |
 | `--context FILE [FILE ...]` | One or more context files describing the dataset. Any format is accepted: DCAT (JSON-LD, Turtle, RDF/XML), Markdown, plain text, JSON, or combinations thereof. |
 
 ### Options
@@ -170,7 +176,6 @@ ogd-to-lod --dataset-id <id> [--output-folder <folder>]
 | `--config` | `-c` | Path to configuration file (default: `config/config.yaml`) |
 | `--base-uri` | `-b` | Base URI for generated resources (overrides config) |
 | `--local` | | Write results to `results/<timestamp>-<output-folder>/` instead of opening a GitHub PR |
-| `--dataset-id` | | Bootstrap CSV/context from Huwise API using dataset id |
 | `--help` | | Show help message |
 
 ### Examples
@@ -206,26 +211,34 @@ ogd-to-lod example/weather-binningen-hourly/data.csv \
     --base-uri https://example.org/data/ \
     --local
 
-# Dataset bootstrap mode (requires HUWISE_DOMAIN)
-ogd-to-lod --dataset-id 100051 --local
+# Huwise mode (requires HUWISE_DOMAIN)
+ogd-to-lod-huwise --dataset-id 100051 --local
 ```
 
-### Dataset Bootstrap Mode (`--dataset-id`)
+### Huwise mode (`ogd-to-lod-huwise`)
 
-When `--dataset-id` is used, the CLI derives the base URL (derived_base_url) as:
+`ogd-to-lod-huwise` is an optional wrapper that bootstraps inputs from a Huwise
+(OpenDataSoft) dataset and then runs the same mapping flow as the core tool. The
+core `ogd-to-lod` command itself has no Huwise dependency.
+
+It requires the `HUWISE_DOMAIN` env var and derives the base URL as:
 
 - `https://<HUWISE_DOMAIN>/api/explore/v2.1`
 
-Then it runs a setup phase before the mapping flow:
+Then it runs a download phase before the mapping flow:
 
 - fetches dataset metadata JSON from `<derived_base_url>/catalog/datasets/{id}`
 - fetches CSV export from `<derived_base_url>/catalog/datasets/{id}/exports/csv`
 - fetches DCAT Turtle from `<derived_base_url>/catalog/exports/ttl?where=dataset_id="{id}"`
 - generates a `fields.json` context file from the dataset `fields` schema
 
-Setup artifacts are written under `.work/dataset_setup/<timestamp>-<dataset-id>/` and then passed into the existing pipeline as local inputs.
+Downloaded artifacts are written under `.work/dataset_setup/<timestamp>-<dataset-id>/`
+and then passed into the pipeline as local inputs. `--output-folder` defaults to
+the dataset id. If `HUWISE_DOMAIN` is missing, the command aborts with an
+explicit error.
 
-If `--dataset-id` is set and `HUWISE_DOMAIN` is missing, the CLI aborts with an explicit error.
+An `--upload` flag reserves a hook for pushing generated results back to Huwise;
+it is not implemented yet and currently no-ops with a notice.
 
 The resulting PR will contain two files in `{mappings_folder}/{output-folder}/`:
 
