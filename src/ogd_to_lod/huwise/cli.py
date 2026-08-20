@@ -92,7 +92,7 @@ def main() -> int:
 
     try:
         base_url = resolve_base_url(huwise_domain)
-        setup = prepare_dataset_inputs(dataset_id=args.dataset_id, base_url=base_url)
+        setup = prepare_dataset_inputs(dataset_id=args.dataset_id, base_url=base_url, config=config)
     except DatasetSetupError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
