@@ -39,6 +39,11 @@ class SPARQLConfig:
 
     endpoint: str | None = None
 
+@dataclass
+class HuwiseConfig:
+    """Huwise configuration."""
+
+    api_key: str | None = None
 
 @dataclass
 class RMLConfig:
@@ -83,6 +88,7 @@ class Config:
     github: GitHubConfig
     azure: AzureOpenAIConfig
     sparql: SPARQLConfig | None
+    huwise: HuwiseConfig
     rml: RMLConfig = field(default_factory=RMLConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
@@ -201,6 +207,14 @@ def load_config(config_path: str | Path) -> Config:
         else:
             sparql = None
 
+        huwise_data = config_data.get("huwise", {})
+        if huwise_data:
+            huwise = HuwiseConfig(
+                api_key=huwise_data.get("api_key", ""),
+            )
+        else:
+            huwise = None
+
         rml_data = config_data.get("rml") or {}
         # Support environment variable for RMLMapper JAR path
         rmlmapper_jar = rml_data.get("rmlmapper_jar") or os.environ.get("RMLMAPPER_JAR")
@@ -225,6 +239,7 @@ def load_config(config_path: str | Path) -> Config:
                 github=github,
                 azure=azure,
                 sparql=sparql,
+                huwise=huwise,
                 rml=rml,
                 logging=logging_config,
                 )

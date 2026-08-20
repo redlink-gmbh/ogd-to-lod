@@ -27,6 +27,10 @@ sparql:
   # uncomment and set an endpoint to enable. With no endpoint the lookup is skipped.
   # endpoint: "http://localhost:3030/test/query"
 
+huwise:
+  # Optional Huwise api key: option to reupload generated rml mapping to huwise
+  api_key: "${HUWISE_API_KEY}"
+
 rml:
   # Base URI pattern for generated resources
   base_uri: "https://ld.domain.ch/statistics/"
