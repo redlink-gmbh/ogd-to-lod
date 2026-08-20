@@ -1,9 +1,11 @@
 """CLI entry point for OGD to LOD tool (core: local CSV + context files)."""
 
 import argparse
+import os
 import sys
 
 from ogd_to_lod.config import load_config
+from ogd_to_lod.huwise import prepare_dataset_inputs, DatasetSetupError
 from ogd_to_lod.logging import get_logger
 from ogd_to_lod.runner import run_mapping_session
 from urllib.parse import urlparse
