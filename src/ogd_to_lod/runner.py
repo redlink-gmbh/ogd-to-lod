@@ -143,6 +143,11 @@ def run_mapping_session(
             prompt = f"Dataset name ['{name}']: "
         elif flow.is_awaiting_csv_url():
             prompt = "Public CSV source URL (Enter to skip): "
+        elif flow.is_awaiting_lookup_confirmation():
+            prompt = (
+                "Reuse existing vocabulary? "
+                "(yes / no / comma-separated columns to exclude): "
+            )
         elif flow.is_awaiting_pr_confirmation():
             if flow.is_local_output():
                 prompt = "Save results locally? (yes/no): "
@@ -204,6 +209,17 @@ def run_mapping_session(
         if state.current_state == FlowState.ERROR:
             print(f"\nError: {state.error_message}", file=sys.stderr)
             return MappingSessionResult(exit_code=1, flow=flow)
+
+        # Show vocabulary reuse matches when transitioning to LOOKUP state
+        if flow.is_awaiting_lookup_confirmation():
+            print("\n" + "=" * 60)
+            print("Vocabulary Reuse Found:")
+            print("-" * 60)
+            reuse_context = flow.state.reuse_context
+            if reuse_context:
+                print(reuse_context.to_display_text())
+            print("=" * 60)
+            continue
 
         # Show PR preview when transitioning to PREVIEW state
         if flow.is_awaiting_pr_confirmation() and flow.get_pr_description():

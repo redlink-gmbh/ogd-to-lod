@@ -164,6 +164,7 @@ Property URIs must be valid IRIs. Column names often contain characters that are
 - Replace spaces with `_`
 - Replace or remove brackets `[`, `]`, `(`, `)`
 - Replace `.` with `_` when used as separator (e.g. `PM2.5` → `PM2_5`)
+- Remove `%`, `/`, `#`, `?`, `&`, `=`, `+`, `,`, `;`, `:` and any other non-alphanumeric character not explicitly listed above
 - Keep alphanumeric characters and `_`, `-`
 
 Examples:

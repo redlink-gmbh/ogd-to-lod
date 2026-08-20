@@ -173,7 +173,7 @@ class RMLGenerator:
             logger.info(
                 "Injecting reuse context: %d properties, %d DefinedTermSets",
                 len(reuse_context.properties),
-                len(reuse_context.defined_term_sets),
+                len(reuse_context.columns),
             )
 
         # Two URI scopes:

@@ -376,13 +376,11 @@ class AIService:
 
         return usage
 
-    def send_message(self, message: str) -> str:
-        """Send a message to the AI and get a response.
-
-        The message and response are added to conversation history.
+    def _invoke(self, messages: list[Any]) -> str:
+        """Invoke the LLM client with retries, token accounting and callbacks.
 
         Args:
-            message: User message to send.
+            messages: Fully-built list of LangChain message objects to send.
 
         Returns:
             AI response content.
@@ -400,13 +398,8 @@ class AIService:
         # Log that we're making a request
         logger.debug(
             f"Sending AI request #{self._request_count + 1} "
-            f"(message length: {len(message)} chars)"
+            f"({len(messages)} messages)"
         )
-
-        messages = self._build_messages(message)
-
-        # Add user message to history
-        self._conversation_history.append(Message(role="user", content=message))
 
         # Attempt with retries
         last_error: Exception | None = None
@@ -443,11 +436,6 @@ class AIService:
                     except Exception as e:
                         logger.warning(f"Token callback failed: {e}")
 
-                # Add assistant response to history
-                self._conversation_history.append(
-                    Message(role="assistant", content=response_content)
-                )
-
                 return response_content
 
             except RateLimitError as e:
@@ -472,8 +460,6 @@ class AIService:
                 continue
 
             except APIConnectionError as e:
-                # Remove user message from history on connection failure
-                self._conversation_history.pop()
                 logger.error(f"Connection to Azure OpenAI failed: {e}")
                 print(
                     f"\n⚠ Connection failed: {e}\n"
@@ -485,8 +471,6 @@ class AIService:
                 ) from e
 
             except APIStatusError as e:
-                # Remove user message from history on error
-                self._conversation_history.pop()
                 logger.error(f"Azure OpenAI API error {e.status_code}: {e.message}")
 
                 # Provide user-friendly error messages
@@ -519,15 +503,74 @@ class AIService:
                 ) from e
 
             except Exception as e:
-                # Remove user message from history on unexpected error
-                self._conversation_history.pop()
                 raise AIServiceError(f"Unexpected error: {e}") from e
 
         # All retries exhausted for rate limit
-        self._conversation_history.pop()
         raise RateLimitExceeded(
             f"Rate limit exceeded after {self._max_retries} retries: {last_error}"
         )
+
+    def send_message(self, message: str) -> str:
+        """Send a message to the AI and get a response.
+
+        The message and response are added to conversation history.
+
+        Args:
+            message: User message to send.
+
+        Returns:
+            AI response content.
+
+        Raises:
+            RequestLimitReached: If request limit is reached.
+            RateLimitExceeded: If rate limit is exceeded after all retries.
+            ConnectionFailed: If connection to API fails.
+            AIServiceError: For other API errors.
+        """
+        messages = self._build_messages(message)
+
+        # Add user message to history
+        self._conversation_history.append(Message(role="user", content=message))
+
+        try:
+            response_content = self._invoke(messages)
+        except Exception:
+            # Remove the user message again so history reflects only
+            # successfully completed exchanges.
+            self._conversation_history.pop()
+            raise
+
+        # Add assistant response to history
+        self._conversation_history.append(
+            Message(role="assistant", content=response_content)
+        )
+
+        return response_content
+
+    def ask_once(self, message: str) -> str:
+        """Send a single isolated message, bypassing conversation history.
+
+        Used for reuse-lookup calls (e.g. template proposal,
+        property matching) that must not accumulate in the conversation
+        history used by `send_message`/GENERATE.
+
+        Args:
+            message: The message to send.
+
+        Returns:
+            AI response content.
+
+        Raises:
+            RequestLimitReached: If request limit is reached.
+            RateLimitExceeded: If rate limit is exceeded after all retries.
+            ConnectionFailed: If connection to API fails.
+            AIServiceError: For other API errors.
+        """
+        messages = [
+            SystemMessage(content=self._system_prompt),
+            HumanMessage(content=message),
+        ]
+        return self._invoke(messages)
 
     @staticmethod
     def parse_response(response: str) -> ParsedResponse:
