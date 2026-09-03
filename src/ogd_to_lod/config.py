@@ -43,6 +43,12 @@ class SPARQLConfig:
     max_candidate_term_sets: int = 3
     min_row_coverage: float = 0.9
 
+@dataclass
+class MappingTemplateConfig:
+    """Mapping template configuration."""
+
+    api: str | None = None
+
 
 @dataclass
 class RMLConfig:
@@ -87,6 +93,7 @@ class Config:
     github: GitHubConfig
     azure: AzureOpenAIConfig
     sparql: SPARQLConfig | None
+    mapping: MappingTemplateConfig | None
     rml: RMLConfig = field(default_factory=RMLConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
@@ -205,6 +212,14 @@ def load_config(config_path: str | Path) -> Config:
         else:
             sparql = None
 
+        mapping_template_data = config_data.get("mapping_templates", {})
+        if mapping_template_data:
+            mapping = MappingTemplateConfig(
+                api=mapping_template_data.get("api")
+            )
+        else:
+            mapping = None
+
         rml_data = config_data.get("rml") or {}
         # Support environment variable for RMLMapper JAR path
         rmlmapper_jar = rml_data.get("rmlmapper_jar") or os.environ.get("RMLMAPPER_JAR")
@@ -229,6 +244,7 @@ def load_config(config_path: str | Path) -> Config:
                 github=github,
                 azure=azure,
                 sparql=sparql,
+                mapping=mapping,
                 rml=rml,
                 logging=logging_config,
                 )

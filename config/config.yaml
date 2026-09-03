@@ -25,7 +25,7 @@ sparql:
   # Optional SPARQL linker (EARLY STAGE / experimental): queries an endpoint for
   # existing cube.link properties and DefinedTerms to reuse. Disabled by default —
   # uncomment and set an endpoint to enable. With no endpoint the lookup is skipped.
-  # endpoint: "http://localhost:3030/test/query"
+  #endpoint: "http://localhost:3030/test/query"
 
 rml:
   # Base URI pattern for generated resources
@@ -36,3 +36,8 @@ rml:
   rmlmapper_docker_image: "rmlio/rmlmapper-java:latest"
   # Docker image for yarrrml-parser (Tier 2 validation, step 1)
   yarrrml_parser_docker_image: "rmlio/yarrrml-parser:latest"
+
+mapping_templates:
+ api: "https://api.github.com/repos/opendatabs/ogd-to-lod/branches"
+
+

@@ -19,11 +19,11 @@ _ROLE_BY_TYPE = {
 }
 
 
-def get_mapping_branches(session):
+def get_mapping_branches(session, api: str):
     branches = []
     page = 1
     while True:
-        resp = session.get(f"{API}/branches", params={"per_page": 100, "page": page})
+        resp = session.get(api, params={"per_page": 100, "page": page})
         resp.raise_for_status()
         batch = resp.json()
         if not batch:
@@ -34,7 +34,7 @@ def get_mapping_branches(session):
             if name.startswith("mapping/"):
                 branches.append(name)
 
-                if len(branches) >= 2: #for testing only 2
+                if len(branches) >= 5: #for testing only 2
                     return branches
 
     return branches
@@ -49,12 +49,12 @@ def get_file_content(session, path, ref):
     return base64.b64decode(data["content"]).decode("utf-8")
 
 
-def collect_mappings():
+def collect_mappings(api: str):
     """load YARRRML + rdflib-Graph per mapping from repo."""
     session = requests.Session()
 
     results = {}
-    for branch in get_mapping_branches(session):
+    for branch in get_mapping_branches(session, api):
         dsnr = branch.split("/", 1)[1]  # datasetnumber
         base = f"mapping/{dsnr}"
         yarrrml_raw = get_file_content(session, f"{base}/mapping.yarrrml.yaml", branch)
@@ -138,9 +138,9 @@ def build_mapping_template(branch: str, dsnr: str, mapping: dict, graph: Graph) 
         cube_shape=detect_cube_shape(graph),
     )
 
-def collect_mapping_templates() -> list[MappingTemplate]:
+def collect_mapping_templates(api: str) -> list[MappingTemplate]:
     templates: list[MappingTemplate] = []
-    for dsnr, data in collect_mappings().items():
+    for dsnr, data in collect_mappings(api).items():
         mapping, graph = data.get("mapping"), data.get("metadata_graph")
         if not mapping or graph is None:
             continue

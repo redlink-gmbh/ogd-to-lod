@@ -38,6 +38,7 @@ from .state import (
     MeasureProposal,
     UserIntent,
 )
+from ..mapping_lookup.mapping_client import MappingService
 
 logger = get_logger(__name__)
 
@@ -147,8 +148,26 @@ def analyze_node(state: GraphState, config: Config, ai_service: Any | None = Non
             logger.warning("Failed to parse context files: %s", e)
             # Context is optional — continue without it
 
-    # Build summary
-    state.parsed_summary = _build_summary(state.csv_schema, state.dataset_context)
+    #try to find a similiar mapping template
+    if config.mapping is not None:
+        mapping_client = MappingService(config.mapping.api)
+        mapping_template = mapping_client.reuse_mapping(state.csv_schema)
+        if mapping_template is not None:
+            state.mapping_context = mapping_template.build_humanreadable_discription()
+            state.mapping_template = mapping_template.build_llm_prompt()
+
+            # Build summary
+            state.parsed_summary = _build_summary(state.csv_schema, state.dataset_context, state.mapping_context)
+        else:
+            state.mapping_template = None
+            state.mapping_context = None
+
+            # Build summary
+            state.parsed_summary = _build_summary(state.csv_schema, state.dataset_context, "no reusable mapping template found")
+
+    else:
+        # Build summary
+        state.parsed_summary = _build_summary(state.csv_schema, state.dataset_context, "")
 
     # Transition to PROPOSE
     state.current_state = FlowState.PROPOSE
@@ -949,7 +968,7 @@ def _build_pr_description(state: GraphState, mapping_name: str) -> str:
     return render_pr_template(template_text, data)
 
 
-def _build_summary(csv_schema: dict[str, Any] | None, dataset_context: dict[str, Any] | None) -> str:
+def _build_summary(csv_schema: dict[str, Any] | None, dataset_context: dict[str, Any] | None, mapping_context: str | None = None) -> str:
     """Build a human-readable summary of parsed data."""
     lines = []
 
@@ -983,6 +1002,10 @@ def _build_summary(csv_schema: dict[str, Any] | None, dataset_context: dict[str,
             lines.append(f"Keywords: {', '.join(dataset_context['keywords'])}")
         if dataset_context.get("source_format"):
             lines.append(f"Format: {dataset_context['source_format']}")
+
+        if mapping_context:
+            lines.append("")
+            lines.append(mapping_context)
 
     return "\n".join(lines)
 
@@ -1035,6 +1058,11 @@ def _build_ai_context(state: GraphState) -> str:
                 if comment:
                     line += f" ({comment})"
                 lines.append(line)
+
+    #add mapping templates to context
+    if state.mapping_template:
+        lines.append("")
+        lines.append(state.mapping_template)
 
     return "\n".join(lines)
 
