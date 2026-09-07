@@ -150,7 +150,7 @@ def analyze_node(state: GraphState, config: Config, ai_service: Any | None = Non
 
     #try to find a similiar mapping template
     if config.mapping is not None:
-        mapping_client = MappingService(config.mapping.api)
+        mapping_client = MappingService(config.mapping)
         mapping_template = mapping_client.reuse_mapping(state.csv_schema)
         if mapping_template is not None:
             state.mapping_context = mapping_template.build_humanreadable_discription()

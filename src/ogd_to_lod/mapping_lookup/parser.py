@@ -6,6 +6,7 @@ import yaml
 from rdflib import RDF, Graph, Namespace, URIRef
 
 from .models import MappingTemplate, Property
+from ..config import MappingTemplateConfig
 
 REPO = "opendatabs/ogd-to-lod"
 API = f"https://api.github.com/repos/{REPO}"
@@ -19,11 +20,11 @@ _ROLE_BY_TYPE = {
 }
 
 
-def get_mapping_branches(session, api: str):
+def get_mapping_branches(session, config: MappingTemplateConfig):
     branches = []
     page = 1
     while True:
-        resp = session.get(api, params={"per_page": 100, "page": page})
+        resp = session.get(config.api, params={"per_page": 100, "page": page})
         resp.raise_for_status()
         batch = resp.json()
         if not batch:
@@ -34,7 +35,7 @@ def get_mapping_branches(session, api: str):
             if name.startswith("mapping/"):
                 branches.append(name)
 
-                if len(branches) >= 5: #for testing only 2
+                if len(branches) >= config.amount_branches:
                     return branches
 
     return branches
@@ -49,12 +50,12 @@ def get_file_content(session, path, ref):
     return base64.b64decode(data["content"]).decode("utf-8")
 
 
-def collect_mappings(api: str):
+def collect_mappings(config: MappingTemplateConfig):
     """load YARRRML + rdflib-Graph per mapping from repo."""
     session = requests.Session()
 
     results = {}
-    for branch in get_mapping_branches(session, api):
+    for branch in get_mapping_branches(session, config):
         dsnr = branch.split("/", 1)[1]  # datasetnumber
         base = f"mapping/{dsnr}"
         yarrrml_raw = get_file_content(session, f"{base}/mapping.yarrrml.yaml", branch)
@@ -138,9 +139,9 @@ def build_mapping_template(branch: str, dsnr: str, mapping: dict, graph: Graph) 
         cube_shape=detect_cube_shape(graph),
     )
 
-def collect_mapping_templates(api: str) -> list[MappingTemplate]:
+def collect_mapping_templates(config: MappingTemplateConfig) -> list[MappingTemplate]:
     templates: list[MappingTemplate] = []
-    for dsnr, data in collect_mappings(api).items():
+    for dsnr, data in collect_mappings(config).items():
         mapping, graph = data.get("mapping"), data.get("metadata_graph")
         if not mapping or graph is None:
             continue

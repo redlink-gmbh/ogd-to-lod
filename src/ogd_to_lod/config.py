@@ -48,6 +48,10 @@ class MappingTemplateConfig:
     """Mapping template configuration."""
 
     api: str | None = None
+    amount_branches: int = 15
+    label_match_threshold: float = 0.6
+    top_n_candidates: int = 3
+    template_score_threshold: float = 0.5
 
 
 @dataclass
@@ -215,7 +219,11 @@ def load_config(config_path: str | Path) -> Config:
         mapping_template_data = config_data.get("mapping_templates", {})
         if mapping_template_data:
             mapping = MappingTemplateConfig(
-                api=mapping_template_data.get("api")
+                api=mapping_template_data.get("api"),
+                amount_branches=mapping_template_data.get("amount_branches"),
+                label_match_threshold=mapping_template_data.get("label_match_threshold"),
+                top_n_candidates=mapping_template_data.get("top_n_candidates"),
+                template_score_threshold=mapping_template_data.get("template_score_threshold"),
             )
         else:
             mapping = None

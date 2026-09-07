@@ -39,5 +39,9 @@ rml:
 
 mapping_templates:
  api: "https://api.github.com/repos/opendatabs/ogd-to-lod/branches"
+ amount_branches: 15 # max amount of branches to request lookups
+ label_match_threshold: 0.6 # minimum similarity for a property to count as a match for a column
+ top_n_candidates: 3 # max number of templates returned
+ template_score_threshold: 0.5 # templates below this score count as "no candidate"
 
 

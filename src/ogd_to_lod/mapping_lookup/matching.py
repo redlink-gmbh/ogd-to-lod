@@ -3,6 +3,7 @@ from __future__ import annotations
 import difflib
 import re
 
+from ogd_to_lod.config import MappingTemplateConfig
 from ogd_to_lod.mapping_lookup.models import ColumnMatch, MappingTemplate, Property, TemplateMatch
 
 _DATATYPE_EQUIVALENTS: dict[str, set[str]] = {
@@ -14,13 +15,6 @@ _DATATYPE_EQUIVALENTS: dict[str, set[str]] = {
     "datetime": {"xsd:dateTime"},
     "boolean": {"xsd:boolean"},
 }
-
-LABEL_MATCH_THRESHOLD = 0.6     # minimum similarity for a property to count as a match for a column
-DATATYPE_BONUS = 0.15           # score bonus when the datatype is compatible
-TOP_N_CANDIDATES = 3            # max number of templates returned
-TEMPLATE_SCORE_THRESHOLD = 0.4  # templates below this score count as "no candidate"
-
-
 
 
 def _normalize(text: str) -> str:
@@ -37,29 +31,37 @@ def _label_similarity(column_name: str, label: str | None) -> float:
     return difflib.SequenceMatcher(None, a, b).ratio()
 
 
-def _datatype_bonus(column_type: str, prop_datatype: str | None) -> float:
+def _datatype_compatible(column_type: str, prop_datatype: str | None) -> bool:
+    """Strict compatibility check: reject unless the datatypes are known to align.
+    """
     if not prop_datatype:
-        return 0.0
+        return False
     equivalents = _DATATYPE_EQUIVALENTS.get(column_type, set())
-    return DATATYPE_BONUS if prop_datatype in equivalents else 0.0
+    return prop_datatype in equivalents
 
 
-def _best_property_for_column(column: dict, properties: list[Property]) -> ColumnMatch | None:
-    """Find the best-matching property (by label similarity + datatype bonus) for a CSV column."""
+def _best_property_for_column(column: dict, label_match_threshold: float ,properties: list[Property]) -> ColumnMatch | None:
+    """Find the best-matching property (by label similarity) for a CSV column.
+
+    Properties whose datatype is known and incompatible with the column's
+    type are rejected outright, even if the label matches well.
+    """
     best: ColumnMatch | None = None
     for prop in properties:
         similarity = _label_similarity(column["name"], prop.label)
-        if similarity < LABEL_MATCH_THRESHOLD:
+        if similarity < label_match_threshold:
             continue
 
-        score = similarity + _datatype_bonus(column["type"], prop.datatype)
-        if best is None or score > best.score:
-            best = ColumnMatch(column_name=column["name"], property=prop, score=score)
+        if not _datatype_compatible(column["type"], prop.datatype):
+            continue
+
+        if best is None or similarity > best.score:
+            best = ColumnMatch(column_name=column["name"], property=prop, score=similarity)
 
     return best
 
 
-def score_template(csv_schema: dict, template: MappingTemplate) -> TemplateMatch:
+def score_template(csv_schema: dict, label_match_threshold: float,template: MappingTemplate) -> TemplateMatch:
     """Score a single template against the csv_schema.
 
     Score = coverage (share of CSV columns with a match) * average similarity
@@ -69,7 +71,7 @@ def score_template(csv_schema: dict, template: MappingTemplate) -> TemplateMatch
     matches = [
         match
         for column in columns
-        if (match := _best_property_for_column(column, template.properties)) is not None
+        if (match := _best_property_for_column(column,label_match_threshold, template.properties)) is not None
     ]
 
     coverage = len(matches) / len(columns) if columns else 0.0
@@ -85,11 +87,10 @@ def score_template(csv_schema: dict, template: MappingTemplate) -> TemplateMatch
 def rank_templates(
         csv_schema: dict,
         templates: list[MappingTemplate],
-        top_n: int = TOP_N_CANDIDATES,
-        threshold: float = TEMPLATE_SCORE_THRESHOLD,
+        config: MappingTemplateConfig,
 ) -> list[TemplateMatch]:
     """Score all templates, drop those below the threshold, return the top-N by score."""
-    scored = [score_template(csv_schema, template) for template in templates]
-    candidates = [tm for tm in scored if tm.score >= threshold]
+    scored = [score_template(csv_schema, config.label_match_threshold, template) for template in templates]
+    candidates = [tm for tm in scored if tm.score >= config.template_score_threshold]
     candidates.sort(key=lambda tm: tm.score, reverse=True)
-    return candidates[:top_n]
+    return candidates[:config.top_n_candidates]
