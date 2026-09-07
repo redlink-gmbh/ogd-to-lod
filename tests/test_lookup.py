@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from ogd_to_lod.lookup.property_matcher import PropertyMatcher
-from ogd_to_lod.config import SPARQLConfig
+from ogd_to_lod.config import SPARQLConfig, MappingTemplateConfig
 from ogd_to_lod.lookup import ReuseContext
 from ogd_to_lod.lookup.models import ColumnReuse, MatchedProperty
 from ogd_to_lod.lookup.term_matcher import TermMatcher
@@ -424,6 +424,7 @@ class TestSPARQLLookupNoEndpoint:
         config = Config(
             github=GitHubConfig(repo="org/repo", token="tok"),
             azure=AzureOpenAIConfig(endpoint="https://e", api_key="k", deployment="d"),
+            mapping=MappingTemplateConfig(),
             sparql=SPARQLConfig(endpoint=None),
         )
         state = GraphState(

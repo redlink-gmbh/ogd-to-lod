@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from ogd_to_lod.config import Config, GitHubConfig, AzureOpenAIConfig, RMLConfig, SPARQLConfig
+from ogd_to_lod.config import Config, GitHubConfig, AzureOpenAIConfig, RMLConfig, SPARQLConfig, MappingTemplateConfig
 from ogd_to_lod.graph.state import (
     DimensionProposal,
     FlowState,
@@ -45,6 +45,7 @@ def mock_config():
             api_key="test-key",
             deployment="gpt-4",
         ),
+        mapping=None,
         sparql=SPARQLConfig(endpoint="http://localhost:3030/test/query"),
         rml=RMLConfig(base_uri="https://example.org/"),
     )
@@ -246,7 +247,7 @@ class TestAnalyzeNode:
         state = GraphState(csv_path="/path/to/file.csv")
         state.current_state = FlowState.ANALYZE
 
-        result = analyze_node(state, mock_config)
+        result = analyze_node(state, mock_config, None)
 
         assert result.current_state == FlowState.PROPOSE
         assert result.csv_schema is not None

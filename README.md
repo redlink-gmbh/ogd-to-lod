@@ -96,6 +96,13 @@ azure:
 sparql:
   # endpoint: "http://localhost:3030/test/query"  # SPARQL linker — early stage, disabled by default
 
+mapping_templates:
+#  api: "https://api.github.com/repos/opendatabs/ogd-to-lod/branches"
+#  amount_branches: 15 # max amount of branches to request lookups
+#  label_match_threshold: 0.6 # minimum similarity for a property to count as a match for a column
+#  top_n_candidates: 3 # max number of templates returned
+#  template_score_threshold: 0.5 # templates below this score count as "no candidate"
+
 rml:
   base_uri: "https://example.org/resource/"
   rmlmapper_use_docker: true
@@ -107,6 +114,11 @@ rml:
 > queries it for existing cube.link properties and DefinedTerms to reuse instead of
 > minting new ones. This feature is experimental and **disabled by default** — leave
 > `sparql.endpoint` commented out (or unset) to skip the lookup entirely.
+
+> **Mapping Templates (early stage).** Searches the Companion-Mapping-Repo (opendatabs/ogd-to-lod-mappings) 
+> for similar mappings to lookup and reuse the cube-decisions.
+> This feature is experimental and **disabled by default** — leave
+> commented out (or unset) to skip the lookup entirely.
 
 ## Running inside Docker
 
