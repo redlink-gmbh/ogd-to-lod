@@ -238,7 +238,6 @@ the dataset id. If `HUWISE_DOMAIN` is missing, the command aborts with an
 explicit error.
 
 An `--upload` flag reserves a hook for pushing generated results back to Huwise;
-it is not implemented yet and currently no-ops with a notice.
 
 The resulting PR will contain two files in `{mappings_folder}/{output-folder}/`:
 
