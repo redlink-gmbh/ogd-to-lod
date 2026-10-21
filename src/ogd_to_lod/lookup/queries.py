@@ -51,7 +51,7 @@ def sample_terms_query(values: list[str]) -> str:
     SELECT ?term ?name ?termSet WHERE {{
       ?term a schema:DefinedTerm ;
             schema:name ?name .
-      OPTIONAL {{ ?term schema:isPartOf ?termSet }}
+      OPTIONAL {{ ?term schema:inDefinedTermSet ?termSet }}
       FILTER(STR(?name) IN ({literals}))
     }}"""
 
@@ -63,7 +63,7 @@ def term_set_query(term_set_uri: str) -> str:
     return f"""{_SCHEMA_PREFIX}
     SELECT ?term ?name WHERE {{
       ?term a schema:DefinedTerm ;
-            schema:isPartOf <{term_set_uri}> ;
+            schema:inDefinedTermSet <{term_set_uri}> ;
             schema:name ?name .
     }}"""
 

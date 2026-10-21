@@ -251,10 +251,23 @@ explicit error.
 
 An `--upload` flag reserves a hook for pushing generated results back to Huwise;
 
-The resulting PR will contain two files in `{mappings_folder}/{output-folder}/`:
+The resulting PR will contain these files in `{mappings_folder}/{output-folder}/`:
 
 - `mapping.yarrrml.yaml` — the generated YARRRML mapping
 - `{csv_filename}` — the CSV source file
+- `metadata.ttl` — static cube metadata (`cube:Cube`, ObservationSet, property labels)
+- `shapes.ttl` — SHACL shapes (`cube:Constraint`) validating the observations
+- `README.md` — the PR description
+
+`shapes.ttl` is derived deterministically from the YARRRML (predicates,
+datatypes, IRI objects), the mapping proposal (key dimension vs. measure) and
+one pass over the full CSV (`sh:minCount 0` for measures with empty cells,
+`sh:pattern` for plain code columns). Codes reused from an existing
+DefinedTermSet get an `sh:in` list of all its terms; newly minted codes are
+linked to a dataset-scoped `schema:DefinedTermSet`
+(`<base>/<output-folder>/termset/<property>`) via `schema:inDefinedTermSet`
+and must belong to it. The RDF preview of the first CSV rows is validated
+against the shapes with pySHACL; violations are shown as a warning only.
 
 ### Local mode (`--local`)
 
@@ -266,7 +279,8 @@ results/<YYYYMMDD-HHMMSS>-<output-folder>/
 ├── mapping.yarrrml.yaml   # generated YARRRML mapping
 ├── data.csv                # CSV source file (always renamed to data.csv)
 ├── PR.md                   # PR description as Markdown
-└── metadata.ttl            # static metadata (when generated)
+├── metadata.ttl            # static metadata (when generated)
+└── shapes.ttl              # SHACL shapes (when generated)
 ```
 
 The CSV is always written as `data.csv` so the YARRRML's `{CSV_SOURCE}`

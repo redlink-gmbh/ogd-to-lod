@@ -150,7 +150,7 @@ def observation_properties_query(limit: int = 2000) -> str
 ```
 
 **Q1 — `sample_terms_query`** (brainstorm step 3; one call per column). `FILTER(STR(?name) IN (...))`
-rather than `VALUES`, so language-tagged names match. `schema:isPartOf` stays `OPTIONAL`; terms
+rather than `VALUES`, so language-tagged names match. `schema:inDefinedTermSet` stays `OPTIONAL`; terms
 without a term set cannot win and are logged then ignored.
 
 ```sparql
@@ -158,7 +158,7 @@ PREFIX schema: <http://schema.org/>
 SELECT ?term ?name ?termSet WHERE {
   ?term a schema:DefinedTerm ;
         schema:name ?name .
-  OPTIONAL { ?term schema:isPartOf ?termSet }
+  OPTIONAL { ?term schema:inDefinedTermSet ?termSet }
   FILTER(STR(?name) IN ("Altstetten", "Wipkingen", "Enge"))
 }
 ```
@@ -169,7 +169,7 @@ SELECT ?term ?name ?termSet WHERE {
 PREFIX schema: <http://schema.org/>
 SELECT ?term ?name WHERE {
   ?term a schema:DefinedTerm ;
-        schema:isPartOf <TERMSET_URI> ;
+        schema:inDefinedTermSet <TERMSET_URI> ;
         schema:name ?name .
 }
 ```

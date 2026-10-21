@@ -83,7 +83,7 @@ PREFIX schema: <http://schema.org/>
 SELECT ?term ?name ?termSet WHERE {
   ?term a schema:DefinedTerm ;
         schema:name ?name .
-  OPTIONAL { ?term schema:isPartOf ?termSet }
+  OPTIONAL { ?term schema:inDefinedTermSet ?termSet }
   FILTER(STR(?name) IN ("Altstetten", "Wipkingen", "Enge"))
 }
 ```
@@ -99,7 +99,7 @@ PREFIX schema: <http://schema.org/>
 
 SELECT ?term ?name WHERE {
   ?term a schema:DefinedTerm ;
-        schema:isPartOf <TERMSET_URI> ;
+        schema:inDefinedTermSet <TERMSET_URI> ;
         schema:name ?name .
 }
 ```

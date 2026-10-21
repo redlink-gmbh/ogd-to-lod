@@ -45,7 +45,7 @@ class TermMatcher:
         for term in terms:
             term_set, name = term.get("termSet"), term.get("name")
             if not term_set:
-                # matched a term with no schema:isPartOf
+                # matched a term with no schema:inDefinedTermSet
                 ignored += 1
                 continue
             if name:
@@ -89,8 +89,12 @@ class TermMatcher:
 
 
         name_to_term: dict[str, str] = {}
+        # every term of the set, not only the matched ones (used for SHACL sh:in)
+        term_uris: set[str] = set()
         for row in rows:
             name, term = row.get("name"), row.get("term")
+            if term:
+                term_uris.add(term)
             if not name or not term:
                 continue
             name_to_term[name] = term
@@ -119,6 +123,7 @@ class TermMatcher:
             value_to_term=value_to_term,
             unmatched_values=sorted(unmatched_values),
             truncated=truncated,
+            term_uris=sorted(term_uris),
         )
 
     def match_terms(

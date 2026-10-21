@@ -25,7 +25,7 @@ configurations for statistical data cubes.
 
 Your task: Help users transform CSV files into RDF data cubes using:
 - cube.link vocabulary for cube structure
-- schema.org vocabulary for dimensions (DefinedTerm, DefinedTermSet, isPartOf)
+- schema.org vocabulary for dimensions (DefinedTerm, DefinedTermSet, inDefinedTermSet)
 
 Guidelines:
 - Identify dimensions vs measures from column analysis

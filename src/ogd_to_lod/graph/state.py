@@ -144,6 +144,10 @@ class GraphState:
     # Generated artifacts (populated in GENERATE state)
     generated_rml: str | None = None
     generated_metadata: str | None = None
+    generated_shapes: str | None = None  # SHACL shapes.ttl (#43)
+    shapes_report: str | None = None  # pySHACL report if the RDF preview violates the shapes
+    # full-CSV column statistics for the shapes, computed once per run (column -> ColumnStats)
+    csv_column_stats: dict[str, Any] | None = None
     rdf_preview: str | None = None
     validation_error: str | None = None
     validation_retry_count: int = 0
@@ -204,6 +208,8 @@ class GraphState:
             "awaiting_user_input": self.awaiting_user_input,
             "generated_rml": self.generated_rml,
             "generated_metadata": self.generated_metadata,
+            "generated_shapes": self.generated_shapes,
+            "shapes_report": self.shapes_report,
             "rdf_preview": self.rdf_preview,
             "mapping_decisions": self.mapping_decisions,
             "mapping_name": self.mapping_name,

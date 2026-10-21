@@ -31,8 +31,10 @@ from ogd_to_lod.graph.nodes import (
     _parse_yaml_line_by_line,
     _extract_proposal_from_text,
     _write_local_output,
+    validate_node,
 )
 from ogd_to_lod.graph.flow import MappingFlow
+from ogd_to_lod.validation import ValidationResult
 
 
 @pytest.fixture
@@ -804,6 +806,86 @@ class TestWriteLocalOutput:
         assert "weird name.original.csv" in (target / "PR.md").read_text()
 
 
+class TestShapesOutputAndValidation:
+    """shapes.ttl output and SHACL check of the RDF preview (#43)."""
+
+    def test_local_output_writes_shapes(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        target = _write_local_output(
+            mapping_name="x",
+            output_folder="x",
+            rml_content="mappings: {}\n",
+            pr_description="body",
+            csv_filename="data.csv",
+            csv_content="a,b\n1,2\n",
+            metadata_content="meta",
+            shapes_content="shapes",
+        )
+        assert (target / "shapes.ttl").read_text() == "shapes"
+
+    def test_local_output_without_shapes(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        target = _write_local_output(
+            mapping_name="x",
+            output_folder="x",
+            rml_content="mappings: {}\n",
+            pr_description="body",
+            csv_filename="data.csv",
+            csv_content="a,b\n1,2\n",
+            metadata_content=None,
+        )
+        assert not (target / "shapes.ttl").exists()
+
+    @staticmethod
+    def _validate(state, conforms: bool, report: str = "report"):
+        with patch("ogd_to_lod.graph.nodes.RMLValidator") as validator, patch(
+            "ogd_to_lod.graph.nodes.validate_observations", return_value=(conforms, report)
+        ) as shacl:
+            validator.return_value.validate_with_rmlmapper.return_value = ValidationResult(
+                valid=True, rdf_output="<a> <b> <c> ."
+            )
+            result = validate_node(state)
+        return result, shacl
+
+    @staticmethod
+    def _state():
+        return GraphState(
+            csv_path="/tmp/data.csv",
+            generated_rml="mappings: {}",
+            generated_shapes="<s> a <t> .",
+        )
+
+    def test_violations_are_a_warning_not_a_failure(self):
+        result, shacl = self._validate(self._state(), conforms=False, report="Violation X")
+
+        shacl.assert_called_once_with("<a> <b> <c> .", "<s> a <t> .")
+        assert result.current_state == FlowState.PREVIEW
+        assert result.shapes_report == "Violation X"
+        assert "Violation X" in result.messages[-1]["content"]
+
+    def test_conforming_preview_has_no_report(self):
+        result, _ = self._validate(self._state(), conforms=True)
+        assert result.current_state == FlowState.PREVIEW
+        assert result.shapes_report is None
+
+    def test_no_shacl_check_without_shapes(self):
+        state = self._state()
+        state.generated_shapes = None
+        _, shacl = self._validate(state, conforms=False)
+        shacl.assert_not_called()
+
+    def test_shacl_errors_never_block(self):
+        with patch("ogd_to_lod.graph.nodes.RMLValidator") as validator, patch(
+            "ogd_to_lod.graph.nodes.validate_observations", side_effect=ImportError("pyshacl")
+        ):
+            validator.return_value.validate_with_rmlmapper.return_value = ValidationResult(
+                valid=True, rdf_output="<a> <b> <c> ."
+            )
+            result = validate_node(self._state())
+        assert result.current_state == FlowState.PREVIEW
+        assert result.shapes_report is None
+
+
 class TestConfirmNameNode:
     """Tests for confirm_name_node setting mapping_name."""
 
@@ -906,6 +988,23 @@ class TestCreatePrNodeEnhancements:
         call_args = mock_service.create_mapping_pr.call_args
         rml_committed = call_args.kwargs["rml_content"]
         assert "{CSV_SOURCE}" in rml_committed
+
+    @patch("ogd_to_lod.graph.nodes.GitHubService")
+    def test_passes_shapes_to_pr(self, mock_gh_cls, mock_config, tmp_path):
+        mock_service = MagicMock()
+        mock_service.create_mapping_pr.return_value = MagicMock(pr_url="u", pr_number=1)
+        mock_gh_cls.return_value = mock_service
+        csv_file = tmp_path / "test.csv"
+        csv_file.write_text("col1\nval\n")
+
+        state = GraphState(
+            csv_path=str(csv_file),
+            generated_rml="mappings: {}",
+            generated_shapes="<s> a <t> .",
+            mapping_name="test",
+        )
+        create_pr_node(state, mock_config)
+        assert mock_service.create_mapping_pr.call_args.kwargs["shapes_content"] == "<s> a <t> ."
 
 
 class TestBuildPrDescriptionIncludesRdfPreview:

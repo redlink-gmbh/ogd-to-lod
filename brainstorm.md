@@ -4,7 +4,7 @@
 * We want to create a Tool that creates RML (RDF Mapping Language https://rml.io/specs/rml/) for given CSV files and their associated descriptive metadata (DCAT).
 * The Tool uses generative AI (GPT Model from Azure) to provide a mapping configuration.
 * The Tool creates RML that can transform the given CSV to a data cubes (must use the cube.link vocabulary (https://cube.link/) and schema.org vocabulary (https://schema.org/)
-* The Tool generates dimensions and their hierarchies using schema.org/DefinedTerm, schema.org/DefinedTermSet and schema.org/isPartOf.
+* The Tool generates dimensions and their hierarchies using schema.org/DefinedTerm, schema.org/DefinedTermSet and schema.org/inDefinedTermSet.
 * The Tool must have a conversation interface with the user to guide the user through the process.
 * The Tool stores the generated RML (one per CSV) and other RDF-files (e.g. for Dimension Instances) in a GitHub repository (folders /mappings, /dimensions). It creates a PR for each new mapping. The PR should include a human-readable description of the mapping and a preview of one or two datapoints (in RDF and human readable form).
 * The Tool should also reuse existing dimensions and measurements (from already deployed data cubes), including properties, instances and units if it is appropriate. It uses SPARQL to get information about already deployed data cubes (e.g. dimensions and mesurements).
