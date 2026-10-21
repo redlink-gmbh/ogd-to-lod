@@ -53,6 +53,11 @@ class MappingTemplateConfig:
     top_n_candidates: int = 3
     template_score_threshold: float = 0.5
 
+@dataclass
+class HuwiseConfig:
+    """Huwise configuration."""
+
+    api_key: str | None = None
 
 @dataclass
 class RMLConfig:
@@ -97,6 +102,7 @@ class Config:
     github: GitHubConfig
     azure: AzureOpenAIConfig
     sparql: SPARQLConfig | None
+    huwise: HuwiseConfig
     mapping: MappingTemplateConfig | None
     rml: RMLConfig = field(default_factory=RMLConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
@@ -216,6 +222,14 @@ def load_config(config_path: str | Path) -> Config:
         else:
             sparql = None
 
+        huwise_data = config_data.get("huwise", {})
+        if huwise_data:
+            huwise = HuwiseConfig(
+                api_key=huwise_data.get("api_key", ""),
+            )
+        else:
+            huwise = None
+
         mapping_template_data = config_data.get("mapping_templates", {})
         if mapping_template_data:
             mapping = MappingTemplateConfig(
@@ -252,6 +266,7 @@ def load_config(config_path: str | Path) -> Config:
                 github=github,
                 azure=azure,
                 sparql=sparql,
+                huwise=huwise,
                 mapping=mapping,
                 rml=rml,
                 logging=logging_config,

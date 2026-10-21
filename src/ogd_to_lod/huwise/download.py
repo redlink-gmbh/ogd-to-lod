@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import urllib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -10,14 +11,13 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import urlopen
 
+from ogd_to_lod.config import Config
 from ogd_to_lod.logging import get_logger
 
 logger = get_logger(__name__)
 
-
 class DatasetSetupError(Exception):
     """Raised when dataset bootstrap fails."""
-
 
 @dataclass
 class DatasetSetupResult:
@@ -47,7 +47,7 @@ def resolve_base_url(domain: str) -> str:
     return f"https://{normalized}/api/explore/v2.1"
 
 
-def prepare_dataset_inputs(dataset_id: str, base_url: str) -> DatasetSetupResult:
+def prepare_dataset_inputs(dataset_id: str, base_url: str, config: Config) -> DatasetSetupResult:
     """Fetch dataset artifacts and materialize local inputs for the mapping flow."""
     if not dataset_id.strip():
         raise DatasetSetupError("Dataset id is empty")
@@ -64,9 +64,9 @@ def prepare_dataset_inputs(dataset_id: str, base_url: str) -> DatasetSetupResult
     ttl_where = f'dataset_id="{dataset_id}"'
     ttl_url = f"{base_url}/catalog/exports/ttl?" + urlencode({"where": ttl_where})
 
-    metadata = _fetch_json(metadata_url, dataset_id)
-    csv_content = _fetch_text(csv_url, dataset_id)
-    ttl_content = _fetch_text(ttl_url, dataset_id)
+    metadata = _fetch_json(metadata_url, dataset_id, config)
+    csv_content = _fetch_text(csv_url, dataset_id, config)
+    ttl_content = _fetch_text(ttl_url, dataset_id, config)
 
     setup_dir = _create_setup_dir(dataset_id)
     csv_path = setup_dir / "data.csv"
@@ -99,10 +99,17 @@ def _create_setup_dir(dataset_id: str) -> Path:
     logger.info("Created setup directory: %s", setup_dir)
     return setup_dir
 
+def _fetch_text(url: str, dataset_id: str, config: Config) -> str:
 
-def _fetch_text(url: str, dataset_id: str) -> str:
+    req = url
+    if config.huwise is not None:
+        headers = {"Authorization": f"ApiKey {config.huwise.api_key}"}
+        req = urllib.request.Request(
+            url, headers={**headers, "Content-Type": "application/json"}
+        )
+
     try:
-        with urlopen(url, timeout=30) as response:
+        with urlopen(req, timeout=30) as response:
             content = response.read().decode("utf-8", errors="replace")
     except HTTPError as e:
         raise DatasetSetupError(
@@ -121,8 +128,8 @@ def _fetch_text(url: str, dataset_id: str) -> str:
     return content
 
 
-def _fetch_json(url: str, dataset_id: str) -> dict:
-    content = _fetch_text(url, dataset_id)
+def _fetch_json(url: str, dataset_id: str, config: Config) -> dict:
+    content = _fetch_text(url, dataset_id, config)
     try:
         return json.loads(content)
     except json.JSONDecodeError as e:
