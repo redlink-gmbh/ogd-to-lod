@@ -427,9 +427,9 @@ class TestSPARQLLookupNoEndpoint:
         config = Config(
             github=GitHubConfig(repo="org/repo", token="tok"),
             azure=AzureOpenAIConfig(endpoint="https://e", api_key="k", deployment="d"),
-            mapping=MappingTemplateConfig(),
             sparql=SPARQLConfig(endpoint=None),
             huwise=HuwiseConfig(api_key="k"),
+            mapping=MappingTemplateConfig(),
         )
         state = GraphState(
             csv_schema=SAMPLE_CSV_SCHEMA,
