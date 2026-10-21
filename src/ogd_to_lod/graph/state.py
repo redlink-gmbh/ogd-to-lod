@@ -125,6 +125,10 @@ class GraphState:
     dataset_context: dict[str, Any] | None = None
     parsed_summary: str | None = None
 
+    #reusable mapping templates
+    mapping_template: str | None = None
+    mapping_context: str | None = None
+
     # Vocabulary reuse context (populated in LOOKUP state)
     reuse_context: ReuseContext | None = None
 

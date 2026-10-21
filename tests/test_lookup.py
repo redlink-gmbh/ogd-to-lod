@@ -6,7 +6,7 @@ import pytest
 
 from ogd_to_lod.config import HuwiseConfig
 from ogd_to_lod.lookup.property_matcher import PropertyMatcher
-from ogd_to_lod.config import SPARQLConfig
+from ogd_to_lod.config import SPARQLConfig, MappingTemplateConfig
 from ogd_to_lod.lookup import ReuseContext
 from ogd_to_lod.lookup.models import ColumnReuse, MatchedProperty
 from ogd_to_lod.lookup.term_matcher import TermMatcher
@@ -429,6 +429,7 @@ class TestSPARQLLookupNoEndpoint:
             azure=AzureOpenAIConfig(endpoint="https://e", api_key="k", deployment="d"),
             sparql=SPARQLConfig(endpoint=None),
             huwise=HuwiseConfig(api_key="k"),
+            mapping=MappingTemplateConfig(),
         )
         state = GraphState(
             csv_schema=SAMPLE_CSV_SCHEMA,

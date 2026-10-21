@@ -44,6 +44,16 @@ class SPARQLConfig:
     min_row_coverage: float = 0.9
 
 @dataclass
+class MappingTemplateConfig:
+    """Mapping template configuration."""
+
+    api: str | None = None
+    amount_branches: int = 15
+    label_match_threshold: float = 0.6
+    top_n_candidates: int = 3
+    template_score_threshold: float = 0.5
+
+@dataclass
 class HuwiseConfig:
     """Huwise configuration."""
 
@@ -93,6 +103,7 @@ class Config:
     azure: AzureOpenAIConfig
     sparql: SPARQLConfig | None
     huwise: HuwiseConfig
+    mapping: MappingTemplateConfig | None
     rml: RMLConfig = field(default_factory=RMLConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
@@ -219,6 +230,18 @@ def load_config(config_path: str | Path) -> Config:
         else:
             huwise = None
 
+        mapping_template_data = config_data.get("mapping_templates", {})
+        if mapping_template_data:
+            mapping = MappingTemplateConfig(
+                api=mapping_template_data.get("api"),
+                amount_branches=mapping_template_data.get("amount_branches"),
+                label_match_threshold=mapping_template_data.get("label_match_threshold"),
+                top_n_candidates=mapping_template_data.get("top_n_candidates"),
+                template_score_threshold=mapping_template_data.get("template_score_threshold"),
+            )
+        else:
+            mapping = None
+
         rml_data = config_data.get("rml") or {}
         # Support environment variable for RMLMapper JAR path
         rmlmapper_jar = rml_data.get("rmlmapper_jar") or os.environ.get("RMLMAPPER_JAR")
@@ -244,6 +267,7 @@ def load_config(config_path: str | Path) -> Config:
                 azure=azure,
                 sparql=sparql,
                 huwise=huwise,
+                mapping=mapping,
                 rml=rml,
                 logging=logging_config,
                 )

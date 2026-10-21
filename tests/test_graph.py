@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from ogd_to_lod.config import Config, GitHubConfig, AzureOpenAIConfig, RMLConfig, SPARQLConfig, HuwiseConfig
+from ogd_to_lod.config import Config, GitHubConfig, AzureOpenAIConfig, RMLConfig, SPARQLConfig, MappingTemplateConfig, HuwiseConfig
 from ogd_to_lod.graph.state import (
     DimensionProposal,
     FlowState,
@@ -47,6 +47,7 @@ def mock_config():
         ),
         sparql=SPARQLConfig(endpoint="http://localhost:3030/test/query"),
         huwise=HuwiseConfig(api_key="test-key"),
+        mapping=None,
         rml=RMLConfig(base_uri="https://example.org/"),
     )
 
