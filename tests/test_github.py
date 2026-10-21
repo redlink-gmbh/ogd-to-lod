@@ -495,6 +495,49 @@ class TestGitHubService:
         assert calls[2][1]["content"] == "<https://ex.org/> a cube:Cube ."
         assert calls[3][1]["path"] == "mapping/with-meta/README.md"
 
+    def test_shapes_file_committed_after_metadata(self, github_config, mock_github):
+        """shapes.ttl is committed right after metadata.ttl when provided (#43)."""
+        mock_repo = MagicMock()
+        mock_github.return_value.get_repo.return_value = mock_repo
+
+        mock_branch = MagicMock()
+        mock_branch.commit.sha = "abc123"
+        mock_repo.get_branch.return_value = mock_branch
+
+        mock_repo.get_contents.side_effect = GithubException(
+            status=404, data={"message": "Not Found"}, headers={},
+        )
+
+        mock_pr = MagicMock()
+        mock_pr.number = 62
+        mock_pr.html_url = "https://github.com/test-org/test-repo/pull/62"
+        mock_repo.create_pull.return_value = mock_pr
+
+        service = GitHubService(github_config)
+        service.create_mapping_pr(
+            mapping_name="with-shapes",
+            rml_content="mappings: {}",
+            description="Test",
+            output_folder="with-shapes",
+            csv_filename="data.csv",
+            csv_content="col1\nval\n",
+            metadata_content="<https://ex.org/> a cube:Cube .",
+            shapes_content="<https://ex.org/shape> a sh:NodeShape .",
+        )
+
+        paths = [c[1]["path"] for c in mock_repo.create_file.call_args_list]
+        assert paths == [
+            "mapping/with-shapes/mapping.yarrrml.yaml",
+            "mapping/with-shapes/data.csv",
+            "mapping/with-shapes/metadata.ttl",
+            "mapping/with-shapes/shapes.ttl",
+            "mapping/with-shapes/README.md",
+        ]
+        assert (
+            mock_repo.create_file.call_args_list[3][1]["content"]
+            == "<https://ex.org/shape> a sh:NodeShape ."
+        )
+
     def test_metadata_file_omitted_when_none(self, github_config, mock_github):
         """No metadata.ttl is committed when metadata_content is None."""
         mock_repo = MagicMock()
@@ -526,4 +569,5 @@ class TestGitHubService:
         assert mock_repo.create_file.call_count == 3
         paths = [c[1]["path"] for c in mock_repo.create_file.call_args_list]
         assert all("metadata.ttl" not in p for p in paths)
+        assert all("shapes.ttl" not in p for p in paths)
         assert "mapping/no-meta/README.md" in paths

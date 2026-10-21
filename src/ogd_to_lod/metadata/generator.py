@@ -7,9 +7,9 @@ emits per-dimension / per-measure ``schema:name`` and
 ``schema:description`` triples on the property IRIs so downstream
 consumers can read column documentation directly from the RDF.
 
-Richer cube.link constructs (``cube:DimensionConstraint`` /
-``cube:MeasureConstraint``, code lists, SHACL paths) remain out of scope —
-see GitHub issue #41.
+The SHACL observation constraint lives in its own file (``shapes.ttl``,
+see ``ogd_to_lod.shapes``); this file only links it from the cube via
+``cube:observationConstraint`` when a shape IRI is supplied.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
-from ogd_to_lod._slug import slugify
+from ogd_to_lod._iris import dataset_iris
 from ogd_to_lod.logging import get_logger
 
 if TYPE_CHECKING:
@@ -48,6 +48,7 @@ class MetadataGenerator:
         output_folder: str | None = None,
         mapping_proposal: dict[str, Any] | None = None,
         reuse_context: ReuseContext | None = None,
+        shape_iri: str | None = None,
     ) -> str:
         """Generate the metadata Turtle string.
 
@@ -69,22 +70,20 @@ class MetadataGenerator:
                 property is reused from an existing endpoint URI are skipped
                 here — that vocabulary is already defined upstream, so we do
                 not redefine it under our own ``property/`` IRI.
+            shape_iri: Optional IRI of the SHACL observation constraint
+                (``shapes.ttl``). When provided, the cube links it via
+                ``cube:observationConstraint``.
 
         Returns:
             Turtle document as a string.
         """
-        base_with_slash = base_uri if base_uri.endswith("/") else base_uri + "/"
-        slug = slugify(output_folder) if output_folder else ""
         # Cube and ObservationSet are dataset-specific (slug-scoped); properties
         # are shared concepts and live under the bare base URI so they can be
         # reused across datasets (mirrors the YARRRML ex-property: prefix).
-        if slug:
-            cube_iri = base_with_slash + slug
-            obs_set_iri = cube_iri + "/observation-set"
-        else:
-            cube_iri = base_uri
-            obs_set_iri = base_with_slash + "observation-set"
-        property_prefix = base_with_slash + "property/"
+        iris = dataset_iris(base_uri, output_folder)
+        cube_iri = iris.cube
+        obs_set_iri = iris.observation_set
+        property_prefix = iris.property_prefix
 
         ctx = dataset_context or {}
 
@@ -124,6 +123,8 @@ class MetadataGenerator:
             cube_lines.append(_indent(f"schema:keywords {', '.join(keyword_strs)}"))
 
         cube_lines.append(_indent(f"cube:observationSet <{obs_set_iri}>"))
+        if shape_iri:
+            cube_lines.append(_indent(f"cube:observationConstraint <{shape_iri}>"))
 
         cube_block = " ;\n".join(cube_lines) + " .\n"
 
@@ -345,6 +346,7 @@ def generate_metadata(
     output_folder: str | None = None,
     mapping_proposal: dict[str, Any] | None = None,
     reuse_context: ReuseContext | None = None,
+    shape_iri: str | None = None,
 ) -> str:
     """Convenience wrapper around :class:`MetadataGenerator`."""
     return MetadataGenerator().generate(
@@ -353,4 +355,5 @@ def generate_metadata(
         output_folder,
         mapping_proposal,
         reuse_context,
+        shape_iri,
     )

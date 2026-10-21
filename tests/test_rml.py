@@ -545,7 +545,7 @@ class TestFixBareIriObjects:
     def test_rewrites_multiple_occurrences(self):
         src = (
             '      - ["cube:dataSet", <https://a.example/x>]\n'
-            '      - ["schema:isPartOf", <https://b.example/y>]\n'
+            '      - ["schema:inDefinedTermSet", <https://b.example/y>]\n'
         )
         out = _fix_bare_iri_objects(src)
         assert '"https://a.example/x~iri"' in out
@@ -712,3 +712,70 @@ class TestFixIriSubject:
         assert "s: <https://example.org/observation-set>" not in out
         assert "value: https://example.org/observation-set" in out
         assert "type: iri" in out
+
+
+class TestGeneratedArtifactsFinalize:
+    """generate/regenerate post-process the YARRRML and build shapes + metadata (#43)."""
+
+    @staticmethod
+    def _state(csv_path: str, **kwargs) -> GraphState:
+        return GraphState(
+            current_state=FlowState.GENERATE,
+            csv_path=csv_path,
+            base_uri="https://example.org/",
+            output_folder="demo",
+            csv_schema={
+                "source": csv_path,
+                "columns": [
+                    {"name": "year", "type": "int"},
+                    {"name": "region", "type": "string"},
+                    {"name": "value", "type": "float"},
+                ],
+                "delimiter": ",",
+            },
+            mapping_proposal=MappingProposal(
+                dimensions=[
+                    DimensionProposal(column="year", dimension_type="temporal"),
+                    DimensionProposal(column="region", dimension_type="spatial"),
+                ],
+                measures=[MeasureProposal(column="value")],
+                status="approved",
+            ),
+            **kwargs,
+        )
+
+    def test_generate_node_builds_term_sets_shapes_and_metadata(self, mock_ai_service, data_csv):
+        result = generate_node(self._state(data_csv), mock_ai_service)
+
+        assert "schema:inDefinedTermSet" in result.generated_rml
+        assert "https://example.org/demo/termset/RAUM" in result.generated_rml
+        assert "cube:Constraint" in result.generated_shapes
+        assert (
+            "cube:observationConstraint <https://example.org/demo/shape>"
+            in result.generated_metadata
+        )
+        # the full CSV has no empty cells → measure is required
+        assert result.csv_column_stats["value"].empty_count == 0
+        # the shown YARRRML is the post-processed one
+        assert "schema:inDefinedTermSet" in result.messages[-1]["content"]
+
+    def test_regenerate_node_rebuilds_shapes(self, mock_ai_service, data_csv):
+        state = self._state(
+            data_csv, validation_error="syntax error", generated_rml="invalid content"
+        )
+        result = regenerate_node(state, mock_ai_service)
+
+        assert "schema:inDefinedTermSet" in result.generated_rml
+        assert result.generated_shapes is not None
+
+    def test_shapes_failure_does_not_fail_generation(self, mock_ai_service, data_csv):
+        """No cube:Observation mapping → no shapes, no constraint link, flow continues."""
+        mock_ai_service.send_message.return_value = (
+            "```yaml\nmappings:\n  x:\n    s: https://ex.org/$(year)\n    po:\n"
+            "      - [a, https://ex.org/Thing]\n```"
+        )
+        result = generate_node(self._state(data_csv), mock_ai_service)
+
+        assert result.current_state == FlowState.PREVIEW
+        assert result.generated_shapes is None
+        assert "cube:observationConstraint" not in result.generated_metadata

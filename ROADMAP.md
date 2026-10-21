@@ -37,7 +37,8 @@ All issues in this sprint carry `priority-1`.
 - **#43 — Generate SHACL shapes for observation validation**
   - Generate SHACL shapes for observation validation
   - Derive constraints from CSV schema + AI proposal (value types, cardinality, patterns)
-  - Output as `<mapping>-shapes.ttl`
+  - Output as `shapes.ttl` (next to `metadata.ttl`, linked via `cube:observationConstraint`)
+  - Newly minted codes get a dataset-scoped `schema:DefinedTermSet` (`schema:inDefinedTermSet`)
 - **#47 — Blueprint: Standalone local usage**
   - Minimal example: local CSV + metadata file → YARRRML + static triples
   - Docker-based, no external dependencies beyond Azure OpenAI

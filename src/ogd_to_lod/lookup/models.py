@@ -29,6 +29,7 @@ class ColumnReuse:
     unmatched_values: list[str] = field(default_factory=list)
     truncated: bool = False      # distinct-value cap hit → coverage is a lower bound
     property: MatchedProperty | None = None
+    term_uris: list[str] = field(default_factory=list)  # all terms of the set → SHACL sh:in
 
 def build_enriched_table(
         column: str,

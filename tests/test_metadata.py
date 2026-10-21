@@ -300,3 +300,15 @@ def test_reused_property_block_is_skipped():
     assert (
         "<https://example.org/datasets/foo/property/value> a cube:MeasureDimension"
     ) in ttl
+
+
+def test_observation_constraint_linked_when_shape_iri_given():
+    """The cube links the SHACL shape via cube:observationConstraint (#43)."""
+    ttl = generate_metadata(BASE, None, output_folder="luft-basel",
+                            shape_iri=f"{BASE}luft-basel/shape")
+
+    assert f"cube:observationConstraint <{BASE}luft-basel/shape>" in ttl
+
+
+def test_no_observation_constraint_without_shape_iri():
+    assert "cube:observationConstraint" not in generate_metadata(BASE, None)

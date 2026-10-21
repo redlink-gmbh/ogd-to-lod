@@ -6,6 +6,7 @@ import yaml
 from rdflib import RDF, Graph, Namespace, URIRef
 
 from .models import MappingTemplate, Property
+from ..rml.yarrrml import expand_prefix
 from ..config import MappingTemplateConfig
 
 REPO = "opendatabs/ogd-to-lod"
@@ -72,14 +73,6 @@ def collect_mappings(config: MappingTemplateConfig):
 
     return results
 
-def _expand_prefix(term: str, prefixes: dict[str, str]) -> str:
-    if ":" not in term:
-        return term
-    prefix, _, local = term.partition(":")
-    base = prefixes.get(prefix)
-    return f"{base}{local}" if base else term
-
-
 def extract_properties_from_yarrrml(mapping: dict) -> dict[str, Property]:
 
     prefixes = mapping.get("prefixes", {})
@@ -98,7 +91,7 @@ def extract_properties_from_yarrrml(mapping: dict) -> dict[str, Property]:
             if predicate.split(":", 1)[0] not in property_prefixes:
                 continue
 
-            uri = _expand_prefix(predicate, prefixes)
+            uri = expand_prefix(predicate, prefixes)
             datatype = po[2] if len(po) > 2 and isinstance(po[2], str) else None
 
             properties[uri] = Property(

@@ -130,11 +130,15 @@
 - **Tier 1** — `yaml.safe_load()` + structural checks: fast, auto-retries on failure
 - **Tier 2** — Docker two-step: `yarrrml-parser` → Turtle RML → `rmlmapper-java` → RDF
 - Tool shows preview: sample RDF output (Turtle) from RMLMapper
+- Deterministic post-processing: newly minted codes get a `schema:DefinedTermSet`
+  (`schema:inDefinedTermSet`); `shapes.ttl` (SHACL, cube.link `cube:Constraint`) and
+  `metadata.ttl` are derived from the final YARRRML
+- The sample RDF is validated against `shapes.ttl` with pySHACL (violations = warning)
 
 ### Phase 6: PR CREATION ⏸️ (confirmation required)
 - User reviews preview
 - **User confirms** to create PR
-- Tool creates branch, commits `mapping.yarrrml.yaml` + description, opens PR
+- Tool creates branch, commits `mapping.yarrrml.yaml`, CSV, `metadata.ttl`, `shapes.ttl` + description, opens PR
 - Tool displays PR URL
 
 ### Configuration
@@ -252,7 +256,7 @@ configurations for statistical data cubes.
 
 Your task: Help users transform CSV files into RDF data cubes using:
 - cube.link vocabulary for cube structure
-- schema.org vocabulary for dimensions (DefinedTerm, DefinedTermSet, isPartOf)
+- schema.org vocabulary for dimensions (DefinedTerm, DefinedTermSet, inDefinedTermSet)
 
 Guidelines:
 - Identify dimensions vs measures from column analysis

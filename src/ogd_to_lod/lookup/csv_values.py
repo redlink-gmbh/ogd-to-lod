@@ -36,6 +36,8 @@ class CSVValues:
     columns: dict[str, Counter[str]] = field(default_factory=dict)
     total_rows: int = 0
     truncated: set[str] = field(default_factory=set)
+    # empty cells per column; exact even for truncated columns
+    empty_counts: dict[str, int] = field(default_factory=dict)
 
     def as_tuple(self) -> tuple[dict[str, Counter[str]], int]:
         return self.columns, self.total_rows
@@ -84,16 +86,18 @@ def get_column_values(
 
     counters: dict[str, Counter[str]] = {name: Counter() for name in columns}
     truncated: set[str] = set()
+    empty_counts: dict[str, int] = {name: 0 for name in columns}
     total_rows = 0
 
     try:
         for row in reader:
             total_rows += 1
             for name in columns:
-                if name in truncated:
-                    continue
                 value = row.get(name)
                 if not value:
+                    empty_counts[name] += 1
+                    continue
+                if name in truncated:
                     continue
                 counter = counters[name]
                 if value not in counter and len(counter) >= max_distinct_values:
@@ -112,4 +116,9 @@ def get_column_values(
     if total_rows == 0:
         raise CSVValuesError(f"CSV file '{source}' has no data rows")
 
-    return CSVValues(columns=counters, total_rows=total_rows, truncated=truncated)
+    return CSVValues(
+        columns=counters,
+        total_rows=total_rows,
+        truncated=truncated,
+        empty_counts=empty_counts,
+    )

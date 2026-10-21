@@ -7,6 +7,7 @@ from typing import Any
 
 import yaml
 
+from ogd_to_lod._iris import dataset_iris
 from ogd_to_lod._slug import slugify
 from ogd_to_lod.ai import AIService
 from ogd_to_lod.config import Config
@@ -28,6 +29,13 @@ from ogd_to_lod.parsers import (
     parse_csv,
 )
 from ogd_to_lod.rml import RMLGenerationError, RMLGenerator
+from ogd_to_lod.rml.termsets import add_defined_term_sets
+from ogd_to_lod.shapes import (
+    ShapesGenerationError,
+    compute_column_stats,
+    generate_shapes,
+    validate_observations,
+)
 from ogd_to_lod.validation import RMLValidator, ValidationResult
 
 from .state import (
@@ -476,28 +484,13 @@ def generate_node(state: GraphState, ai_service: AIService) -> GraphState:
         )
 
         state.generated_rml = rml_content
+        _finalize_generated_artifacts(state)
         state.add_message(
             "assistant",
-            f"Generated YARRRML mapping:\n\n```yaml\n{rml_content}\n```"
+            f"Generated YARRRML mapping:\n\n```yaml\n{state.generated_rml}\n```"
         )
 
-        logger.info(f"Successfully generated YARRRML ({len(rml_content)} characters)")
-
-        # Generate companion static metadata Turtle (cube:Cube + ObservationSet
-        # + per-property schema:name/description)
-        state.generated_metadata = generate_metadata(
-            state.base_uri,
-            state.dataset_context,
-            output_folder=state.output_folder,
-            mapping_proposal=state.mapping_proposal.to_dict()
-            if state.mapping_proposal
-            else None,
-            reuse_context=state.reuse_context,
-        )
-        logger.info(
-            "Generated metadata.ttl (%d characters)",
-            len(state.generated_metadata),
-        )
+        logger.info(f"Successfully generated YARRRML ({len(state.generated_rml)} characters)")
 
         # Transition to PREVIEW state
         state.current_state = FlowState.PREVIEW
@@ -686,6 +679,7 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
                 csv_filename=csv_filename,
                 csv_content=csv_content,
                 metadata_content=state.generated_metadata,
+                shapes_content=state.generated_shapes,
             )
             state.local_output_path = str(target_dir)
             state.add_message(
@@ -712,6 +706,7 @@ def create_pr_node(state: GraphState, config: Config) -> GraphState:
             csv_filename=csv_filename,
             csv_content=csv_content,
             metadata_content=state.generated_metadata,
+            shapes_content=state.generated_shapes,
             mappings_folder=config.github.mappings_folder,
         )
 
@@ -745,6 +740,7 @@ def _write_local_output(
     csv_filename: str,
     csv_content: str,
     metadata_content: str | None,
+    shapes_content: str | None = None,
 ) -> Path:
     """Write mapping artifacts to a timestamped folder under ``results/``.
 
@@ -753,7 +749,7 @@ def _write_local_output(
     ``data.csv`` so the YARRRML's ``{CSV_SOURCE}`` placeholder has a
     predictable target), the PR description as Markdown — with the original
     source filename recorded in its header — and optionally the static
-    metadata Turtle.
+    metadata Turtle and the SHACL shapes.
 
     Returns:
         The path of the timestamped folder that was created.
@@ -773,8 +769,93 @@ def _write_local_output(
     )
     if metadata_content:
         (target_dir / "metadata.ttl").write_text(metadata_content, encoding="utf-8")
+    if shapes_content:
+        (target_dir / "shapes.ttl").write_text(shapes_content, encoding="utf-8")
 
     return target_dir
+
+
+# Max characters of a pySHACL report shown in the conversation
+MAX_SHAPES_REPORT_CHARS = 4000
+
+
+def _finalize_generated_artifacts(state: GraphState) -> None:
+    """Post-process the YARRRML and rebuild ``shapes.ttl`` + ``metadata.ttl``.
+
+    Runs after every (re)generation so the shapes always match the final
+    mapping. Shapes failures never fail the flow (no ``shapes.ttl`` then).
+    """
+    if not state.generated_rml or not state.base_uri:
+        return
+    iris = dataset_iris(state.base_uri, state.output_folder)
+
+    # link newly minted codes to their DefinedTermSet (reused codes already exist)
+    reused_code_columns = (
+        {c.column for c in state.reuse_context.columns if c.template_verified}
+        if state.reuse_context
+        else set()
+    )
+    state.generated_rml = add_defined_term_sets(
+        state.generated_rml, iris, skip_columns=reused_code_columns
+    )
+
+    # one full CSV pass per run; {} marks "tried, unavailable"
+    if state.csv_column_stats is None and state.csv_schema:
+        state.csv_column_stats = compute_column_stats(state.csv_schema) or {}
+
+    proposal = state.mapping_proposal.to_dict() if state.mapping_proposal else None
+    try:
+        state.generated_shapes = generate_shapes(
+            state.generated_rml,
+            state.base_uri,
+            output_folder=state.output_folder,
+            mapping_proposal=proposal,
+            column_stats=state.csv_column_stats or None,
+            dataset_context=state.dataset_context,
+            reuse_context=state.reuse_context,
+        )
+        logger.info("Generated shapes.ttl (%d characters)", len(state.generated_shapes))
+    except ShapesGenerationError as e:
+        logger.warning("No shapes.ttl generated: %s", e)
+        state.generated_shapes = None
+
+    # Companion static metadata (cube:Cube + ObservationSet + per-property
+    # schema:name/description); links the shape only if it exists
+    state.generated_metadata = generate_metadata(
+        state.base_uri,
+        state.dataset_context,
+        output_folder=state.output_folder,
+        mapping_proposal=proposal,
+        reuse_context=state.reuse_context,
+        shape_iri=iris.shape if state.generated_shapes else None,
+    )
+    logger.info("Generated metadata.ttl (%d characters)", len(state.generated_metadata))
+
+
+def _check_shapes(state: GraphState, rdf_output: str) -> None:
+    """Validate the RMLMapper sample output against ``state.generated_shapes``."""
+    try:
+        conforms, report = validate_observations(rdf_output, state.generated_shapes)
+    except Exception as e:  # never block the flow on the SHACL check itself
+        logger.warning("SHACL validation of the RDF preview failed to run: %s", e)
+        return
+
+    if conforms:
+        logger.info("RDF preview conforms to shapes.ttl")
+        return
+
+    state.shapes_report = report
+    logger.warning("RDF preview violates shapes.ttl")
+    shown = report
+    if len(shown) > MAX_SHAPES_REPORT_CHARS:
+        shown = shown[:MAX_SHAPES_REPORT_CHARS] + "\n… (truncated)"
+    state.add_message(
+        "assistant",
+        "Warning: the sample RDF (first CSV rows) does not conform to the generated "
+        "SHACL shapes (shapes.ttl). The mapping is kept — this usually means the "
+        "data does not fit the chosen datatype or code list:\n\n"
+        f"```\n{shown}\n```",
+    )
 
 
 def _serialize_dataset_context(context: Any) -> dict[str, Any]:
@@ -1217,9 +1298,10 @@ def regenerate_node(state: GraphState, ai_service: AIService) -> GraphState:
         rml_content = generator.regenerate_with_error(error_message)
 
         state.generated_rml = rml_content
+        _finalize_generated_artifacts(state)
         state.add_message(
             "assistant",
-            f"Corrected YARRRML mapping:\n\n```yaml\n{rml_content}\n```",
+            f"Corrected YARRRML mapping:\n\n```yaml\n{state.generated_rml}\n```",
         )
 
         logger.info(f"Regenerated YARRRML ({len(rml_content)} characters)")
@@ -1288,6 +1370,7 @@ def validate_node(
         # Store RDF preview
         state.rdf_preview = result.rdf_output
         state.validation_error = None
+        state.shapes_report = None
 
         # Log any warnings
         if result.warnings:
@@ -1310,6 +1393,10 @@ def validate_node(
                 "assistant",
                 f"RML syntax validation successful.{note}",
             )
+
+        # SHACL check of the sample RDF — violations are a warning, not a failure
+        if result.rdf_output and state.generated_shapes:
+            _check_shapes(state, result.rdf_output)
 
         # Transition to PREVIEW
         state.current_state = FlowState.PREVIEW

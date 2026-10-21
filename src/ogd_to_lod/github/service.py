@@ -77,6 +77,7 @@ class GitHubService:
         csv_filename: str,
         csv_content: str,
         metadata_content: str | None = None,
+        shapes_content: str | None = None,
         base_branch: str = "main",
         mappings_folder: str = "mapping",
     ) -> PRResult:
@@ -84,8 +85,8 @@ class GitHubService:
 
         Creates a new branch, commits the YARRRML mapping file, the CSV
         source file, a ``README.md`` with the PR description (rendered from
-        ``config/pr_template.md``), and optionally static metadata, then opens
-        a pull request.
+        ``config/pr_template.md``), and optionally static metadata and SHACL
+        shapes, then opens a pull request.
 
         Args:
             mapping_name: Name for the mapping (used in PR title and commit messages).
@@ -96,6 +97,8 @@ class GitHubService:
             csv_content: Content of the CSV file to commit.
             metadata_content: Optional static metadata Turtle (cube:Cube +
                 ObservationSet) to commit as ``metadata.ttl``.
+            shapes_content: Optional SHACL shapes Turtle to commit as
+                ``shapes.ttl``.
             base_branch: Branch to create PR against (default: main).
             mappings_folder: Parent folder in the repository (default: mapping).
 
@@ -145,6 +148,15 @@ class GitHubService:
                     f"Add static metadata: {mapping_name}"
                 )
                 logger.debug(f"Committed metadata file: {metadata_path}")
+
+            # Optionally commit the SHACL observation shapes
+            if shapes_content:
+                shapes_path = f"{folder_path}/shapes.ttl"
+                self._commit_file(
+                    branch_name, shapes_path, shapes_content,
+                    f"Add SHACL shapes: {mapping_name}"
+                )
+                logger.debug(f"Committed shapes file: {shapes_path}")
 
             readme_path = f"{folder_path}/README.md"
             self._commit_file(
